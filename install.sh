@@ -90,6 +90,8 @@ link_path() {
 }
 
 link_path "$repo_root/extensions/ssh-direct" "$extensions_dir/ssh-direct"
+link_path "$repo_root/skills/incident-investigation" \
+    "$agent_dir/skills/incident-investigation"
 link_path "$repo_root/themes/protocol-ink.json" "$agent_dir/themes/protocol-ink.json"
 
 mkdir -p "$agent_dir"
@@ -108,5 +110,5 @@ mv "$temporary_settings" "$settings_path"
 chmod 0600 "$settings_path"
 printf 'merge   %s\n' "$settings_path"
 
-printf '\nPi is calibrated with repository-owned tools only.\n'
-printf 'Authentication, sessions, models, and skills remain machine-local.\n'
+printf '\nPi is calibrated with repository-owned tools and reasoning skills only.\n'
+printf 'Authentication, sessions, models, and domain skills remain machine-local.\n'

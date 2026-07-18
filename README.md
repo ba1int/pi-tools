@@ -26,6 +26,14 @@ This is transport and context control, not a remote authorization system. SSH
 accounts, sudo policy, and the user's work skills remain the operational
 boundaries.
 
+## Incident Investigation
+
+`incident-investigation` supplies a concise evidence contract for alerts and
+outages. It separates symptoms from causes, requires discriminating evidence
+before claiming root cause, preserves read-only requests, and reports the
+smallest safe fix with validation and rollback. Domain skills still define the
+actual topology, commands, logs, configuration, and change procedure.
+
 ## Install
 
 Node.js 22.19 or newer is required.
@@ -36,8 +44,9 @@ Node.js 22.19 or newer is required.
 
 The installer pins Pi to `pi-version.txt`, removes every configured third-party
 Pi package, retires every other global extension into a timestamped backup,
-links the repository-owned extension, and installs the Protocol Ink Pi theme.
-It preserves authentication, sessions, models, and skills.
+links the repository-owned extension and generic incident skill, and installs
+the Protocol Ink Pi theme. It preserves authentication, sessions, models, and
+all other skills.
 
 Restart Pi or run `/reload` after updating the extension.
 

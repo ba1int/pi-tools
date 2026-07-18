@@ -1,0 +1,4 @@
+interface:
+  display_name: "Incident Investigation"
+  short_description: "Evidence-driven operations incident diagnosis"
+  default_prompt: "Use $incident-investigation to diagnose this incident from evidence without making changes."

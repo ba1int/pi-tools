@@ -92,6 +92,9 @@ export default function sshDirect(pi: ExtensionAPI) {
     promptGuidelines: [
       "For remote work, call ssh_exec with the literal host instead of invoking ssh, scp, sftp, or rsync through local bash.",
       "Call ssh_exec tools in parallel when independent checks are needed on multiple hosts.",
+      "For one host, prefer one compact composite ssh_exec call that gathers all task-relevant evidence. Make a follow-up call only when the first result leaves a material question unanswered.",
+      "Use the commands, paths, and probes supplied by a loaded skill or runbook before rediscovering a service implementation.",
+      "If a usual utility or init system is absent, switch once to a portable fallback; do not repeatedly enumerate replacement tools.",
       "Keep remote commands targeted. Do not dump broad environment, package, process, or filesystem listings unless the task requires them.",
     ],
     parameters: Type.Object({
@@ -150,7 +153,7 @@ export default function sshDirect(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => ({
     systemPrompt:
       event.systemPrompt
-      + "\n\nRemote execution is stateless. When the user or a loaded skill identifies a remote host, call ssh_exec directly with that literal host. Never ask the user to enter an SSH mode or slash command. Never invoke ssh, scp, sftp, or rsync through local bash. Use parallel ssh_exec calls for independent hosts and keep output targeted.",
+      + "\n\nRemote execution is stateless. When the user or a loaded skill identifies a remote host, call ssh_exec directly with that literal host. Never ask the user to enter an SSH mode or slash command. Never invoke ssh, scp, sftp, or rsync through local bash. For one host, prefer one compact task-focused call and follow up only when evidence is materially incomplete. Obey loaded skills before rediscovering service internals. Use parallel ssh_exec calls for independent hosts and keep output targeted.",
   }));
 
   pi.on("tool_call", async (event) => {
