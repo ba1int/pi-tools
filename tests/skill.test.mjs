@@ -9,6 +9,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 test("package exposes the owned incident skill", async () => {
   const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   assert.deepEqual(manifest.pi.skills, ["./skills/incident-investigation"]);
+  assert.deepEqual(manifest.pi.extensions, [
+    "./extensions/ssh-direct/index.ts",
+    "./extensions/thinking-router/index.ts",
+  ]);
 });
 
 test("incident skill carries the evidence and change contracts", async () => {
@@ -30,4 +34,6 @@ test("installer links the incident skill without retiring domain skills", async 
     /skills\/incident-investigation"[\s\\\n]+"\$agent_dir\/skills\/incident-investigation"/,
   );
   assert.doesNotMatch(installer, /for skill_path in/);
+  assert.match(installer, /extensions\/thinking-router" "\$extensions_dir\/thinking-router"/);
+  assert.match(installer, /ssh-direct\|thinking-router\) continue/);
 });

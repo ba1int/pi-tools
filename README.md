@@ -34,6 +34,23 @@ before claiming root cause, preserves read-only requests, and reports the
 smallest safe fix with validation and rollback. Domain skills still define the
 actual topology, commands, logs, configuration, and change procedure.
 
+## Thinking Router
+
+`thinking-router` changes the current Sol reasoning level before each prompt
+without calling another model:
+
+- bounded onboarding and explicit runbook execution use `low`;
+- incidents, diagnosis, ambiguity, and runbook engineering use `high`;
+- unknown requests conservatively default to `high`;
+- short confirmations retain the previous level; and
+- an SSH transport error or timeout, or a non-zero checkpoint after mutation,
+  promotes the remaining agent turn to `high`.
+
+The footer status shows the selected mode, level, and reason. Shift+Tab creates
+a manual override for the current session. `/think auto` restores automatic
+routing; `/think low`, `/think high`, and `/think status` are available for
+explicit control. Set `PI_THINKING_ROUTER=off` for controlled benchmarks.
+
 ## Install
 
 Node.js 22.19 or newer is required.
@@ -44,7 +61,7 @@ Node.js 22.19 or newer is required.
 
 The installer pins Pi to `pi-version.txt`, removes every configured third-party
 Pi package, retires every other global extension into a timestamped backup,
-links the repository-owned extension and generic incident skill, and installs
+links the repository-owned extensions and generic incident skill, and installs
 the Protocol Ink Pi theme. It preserves authentication, sessions, models, and
 all other skills.
 
