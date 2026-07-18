@@ -2,6 +2,7 @@ export const DEFAULT_TIMEOUT_SECONDS = 30;
 export const MAX_TIMEOUT_SECONDS = 120;
 export const DEFAULT_OUTPUT_BYTES = 16 * 1024;
 export const MAX_OUTPUT_BYTES = 32 * 1024;
+export const CONTROL_PERSIST_SECONDS = 60;
 
 const HOST_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,252}|[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,252})$/;
 
@@ -40,8 +41,12 @@ export function normalizeOutputLimit(value) {
   return value;
 }
 
-export function sshArgs(host) {
-  return [
+export function connectionReuseEnabled(value) {
+  return !/^(?:0|off|false)$/i.test(String(value ?? ""));
+}
+
+export function sshArgs(host, { controlPath } = {}) {
+  const args = [
     "-T",
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=10",
@@ -51,10 +56,19 @@ export function sshArgs(host) {
     "-o", "PermitLocalCommand=no",
     "-o", "RequestTTY=no",
     "-o", "UpdateHostKeys=no",
-    "--",
-    validateHost(host),
-    "exec bash -se",
   ];
+  if (controlPath !== undefined) {
+    if (typeof controlPath !== "string" || controlPath.length === 0 || controlPath.includes("\0")) {
+      throw new Error("controlPath must be a non-empty local path without NUL bytes");
+    }
+    args.push(
+      "-o", "ControlMaster=auto",
+      "-o", `ControlPersist=${CONTROL_PERSIST_SECONDS}`,
+      "-o", `ControlPath=${controlPath}`,
+    );
+  }
+  args.push("--", validateHost(host), "exec bash -se");
+  return args;
 }
 
 export function remoteProgram(command) {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BoundedCapture,
+  connectionReuseEnabled,
   DEFAULT_OUTPUT_BYTES,
   DEFAULT_TIMEOUT_SECONDS,
   formatResult,
@@ -30,6 +31,20 @@ test("SSH argv fixes noninteractive and forwarding behavior", () => {
   assert.ok(args.includes("ForwardAgent=no"));
   assert.ok(args.includes("PermitLocalCommand=no"));
   assert.ok(!args.join(" ").includes("echo unsafe"));
+});
+
+test("SSH connection reuse is opt-out and adds only client control options", () => {
+  assert.equal(connectionReuseEnabled(undefined), true);
+  assert.equal(connectionReuseEnabled("off"), false);
+  assert.equal(connectionReuseEnabled("FALSE"), false);
+  assert.equal(connectionReuseEnabled("1"), true);
+
+  const args = sshArgs("app01", { controlPath: "/tmp/pi-ssh-1000/%C" });
+  assert.deepEqual(args.slice(-3), ["--", "app01", "exec bash -se"]);
+  assert.ok(args.includes("ControlMaster=auto"));
+  assert.ok(args.includes("ControlPersist=60"));
+  assert.ok(args.includes("ControlPath=/tmp/pi-ssh-1000/%C"));
+  assert.throws(() => sshArgs("app01", { controlPath: "" }), /controlPath/);
 });
 
 test("remote commands are sent as Bash stdin programs", () => {

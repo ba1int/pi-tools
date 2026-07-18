@@ -22,6 +22,11 @@ The tool:
 - blocks model-generated `ssh`, `scp`, `sftp`, and `rsync` transports through
   local Bash so Pi retries through `ssh_exec` automatically.
 
+Repeated calls to the same host reuse a secured local OpenSSH control socket
+for 60 seconds. This changes transport latency only: commands, results, host
+validation, timeouts, and approval behavior remain identical. Set
+`PI_SSH_MULTIPLEXING=off` to return to one new connection per call.
+
 This is transport and context control, not a remote authorization system. SSH
 accounts, sudo policy, and the user's work skills remain the operational
 boundaries.

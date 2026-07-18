@@ -1,10 +1,13 @@
 import { spawn } from "node:child_process";
+import { chmod, lstat, mkdir } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
   BoundedCapture,
+  connectionReuseEnabled,
   formatResult,
   looksLikeRawRemoteTransport,
   normalizeOutputLimit,
@@ -24,16 +27,38 @@ type ExecResult = {
   timedOut: boolean;
 };
 
+async function prepareControlPath(): Promise<string | undefined> {
+  if (!connectionReuseEnabled(process.env.PI_SSH_MULTIPLEXING)) return undefined;
+
+  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  const directory = process.env.PI_SSH_CONTROL_DIR ?? `/tmp/pi-ssh-${uid ?? process.pid}`;
+  if (!isAbsolute(directory)) return undefined;
+
+  try {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const metadata = await lstat(directory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) return undefined;
+    if (uid !== undefined && metadata.uid !== uid) return undefined;
+    if ((metadata.mode & 0o077) !== 0) await chmod(directory, 0o700);
+    return join(directory, "%C");
+  } catch {
+    // Reuse is an optimization. SSH must remain available if the local
+    // filesystem cannot safely host an OpenSSH control socket.
+    return undefined;
+  }
+}
+
 function executeSsh(
   host: string,
   command: string,
   timeoutSeconds: number,
   maxOutputBytes: number,
+  controlPath: string | undefined,
   signal?: AbortSignal,
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
-    const child = spawn("ssh", sshArgs(host), { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("ssh", sshArgs(host, { controlPath }), { stdio: ["pipe", "pipe", "pipe"] });
     const stdout = new BoundedCapture(maxOutputBytes);
     const stderr = new BoundedCapture(maxOutputBytes);
     let timedOut = false;
@@ -83,6 +108,8 @@ function executeSsh(
 }
 
 export default function sshDirect(pi: ExtensionAPI) {
+  const controlPath = prepareControlPath();
+
   pi.registerTool({
     name: "ssh_exec",
     label: "ssh_exec",
@@ -123,7 +150,15 @@ export default function sshDirect(pi: ExtensionAPI) {
       const command = validateCommand(params.command);
       const timeoutSeconds = normalizeTimeout(params.timeout_seconds);
       const maxOutputBytes = normalizeOutputLimit(params.max_output_bytes);
-      const result = await executeSsh(host, command, timeoutSeconds, maxOutputBytes, signal);
+      const resolvedControlPath = await controlPath;
+      const result = await executeSsh(
+        host,
+        command,
+        timeoutSeconds,
+        maxOutputBytes,
+        resolvedControlPath,
+        signal,
+      );
       const rendered = formatResult({ ...result, maxOutputBytes });
       return {
         content: [{ type: "text", text: rendered.text }],
@@ -134,6 +169,7 @@ export default function sshDirect(pi: ExtensionAPI) {
           timedOut: result.timedOut,
           truncated: rendered.truncated,
           originalBytes: rendered.originalBytes,
+          connectionReuseEnabled: Boolean(resolvedControlPath),
         },
       };
     },
