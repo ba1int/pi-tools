@@ -63,11 +63,16 @@ export default function thinkingRouter(pi: ExtensionAPI) {
 
   pi.on("tool_result", async (event, ctx) => {
     if (event.toolName !== "ssh_exec") return;
-    const details = event.details as { exitCode?: number | null; timedOut?: boolean } | undefined;
+    const details = event.details as {
+      exitCode?: number | null;
+      timedOut?: boolean;
+      transportError?: boolean;
+    } | undefined;
     const escalation = state.noteRemoteResult({
       isError: event.isError,
       timedOut: details?.timedOut,
       exitCode: details?.exitCode,
+      transportError: details?.transportError,
     });
     if (escalation) select("high", escalation.reason, ctx);
   });

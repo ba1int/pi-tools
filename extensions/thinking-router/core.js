@@ -39,7 +39,7 @@ export function looksMutatingRemoteCommand(command) {
 }
 
 export function toolFailureRequiresEscalation(result, mutationSeen) {
-  if (result?.isError === true || result?.timedOut === true) return true;
+  if (result?.isError === true || result?.timedOut === true || result?.transportError === true) return true;
   return mutationSeen === true
     && Number.isInteger(result?.exitCode)
     && result.exitCode !== 0;
@@ -90,7 +90,9 @@ export class RoutingState {
     }
     const changed = this.level !== "high";
     this.level = "high";
-    this.reason = "failed checkpoint after mutation";
+    this.reason = result?.isError === true || result?.timedOut === true || result?.transportError === true
+      ? "SSH transport failure"
+      : "failed checkpoint after mutation";
     return { level: "high", reason: this.reason, changed };
   }
 }

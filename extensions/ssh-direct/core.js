@@ -6,6 +6,16 @@ export const CONTROL_PERSIST_SECONDS = 60;
 
 const HOST_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,252}|[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,252})$/;
 
+const TRANSPORT_FAILURE_KINDS = new Set([
+  "timeout",
+  "dns",
+  "authentication",
+  "host_key",
+  "connection_refused",
+  "connection_timeout",
+  "connection_closed",
+]);
+
 export function validateHost(value) {
   if (typeof value !== "string" || !HOST_PATTERN.test(value)) {
     throw new Error(
@@ -43,6 +53,93 @@ export function normalizeOutputLimit(value) {
 
 export function connectionReuseEnabled(value) {
   return !/^(?:0|off|false)$/i.test(String(value ?? ""));
+}
+
+export function classifySshFailure({ exitCode, stderr = "", timedOut = false }) {
+  if (timedOut) return "timeout";
+  if (exitCode === 0) return null;
+  if (exitCode !== 255) return "remote_exit";
+
+  const message = String(stderr);
+  if (/Could not resolve hostname|Name or service not known|nodename nor servname provided|Temporary failure in name resolution/i.test(message)) {
+    return "dns";
+  }
+  if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed|No .* host key is known|Offending .* key/i.test(message)) {
+    return "host_key";
+  }
+  if (/(?:^|\n)(?:[^:\n]+@[^:\n]+:\s*)?Permission denied \([^)]+\)\.?/i.test(message)
+      || /Authentication failed|Too many authentication failures|No supported authentication methods available/i.test(message)) {
+    return "authentication";
+  }
+  if (/Connection refused/i.test(message)) return "connection_refused";
+  if (/Connection timed out|Operation timed out|connect to host .* port .*: timed out/i.test(message)) {
+    return "connection_timeout";
+  }
+  if (/Connection (?:closed|reset)|kex_exchange_identification|banner exchange|Broken pipe|closed by remote host/i.test(message)) {
+    return "connection_closed";
+  }
+  return "remote_exit";
+}
+
+export function isTransportFailureKind(kind) {
+  return TRANSPORT_FAILURE_KINDS.has(kind);
+}
+
+function consumeCsi(value, index) {
+  while (index < value.length) {
+    const code = value.charCodeAt(index);
+    index += 1;
+    if (code >= 0x40 && code <= 0x7e) break;
+  }
+  return index;
+}
+
+function consumeControlString(value, index) {
+  while (index < value.length) {
+    const code = value.charCodeAt(index);
+    if (code === 0x07 || code === 0x9c) return index + 1;
+    if (code === 0x1b && value.charCodeAt(index + 1) === 0x5c) return index + 2;
+    index += 1;
+  }
+  return index;
+}
+
+export function sanitizeTerminalText(value) {
+  const input = String(value ?? "");
+  let output = "";
+
+  for (let index = 0; index < input.length;) {
+    const code = input.charCodeAt(index);
+    if (code === 0x1b) {
+      const next = input.charCodeAt(index + 1);
+      if (next === 0x5b) {
+        index = consumeCsi(input, index + 2);
+      } else if (next === 0x5d || next === 0x50 || next === 0x58 || next === 0x5e || next === 0x5f) {
+        index = consumeControlString(input, index + 2);
+      } else if ([0x28, 0x29, 0x2a, 0x2b, 0x2d, 0x2e, 0x2f].includes(next)) {
+        index = Math.min(input.length, index + 3);
+      } else {
+        index = Math.min(input.length, index + 2);
+      }
+      continue;
+    }
+    if (code === 0x9b) {
+      index = consumeCsi(input, index + 1);
+      continue;
+    }
+    if (code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f) {
+      index = consumeControlString(input, index + 1);
+      continue;
+    }
+    if (code === 0x0a || code === 0x09) {
+      output += input[index];
+    } else if (code >= 0x20 && code !== 0x7f && !(code >= 0x80 && code <= 0x9f)) {
+      output += input[index];
+    }
+    index += 1;
+  }
+
+  return output;
 }
 
 export function sshArgs(host, { controlPath } = {}) {
@@ -154,15 +251,18 @@ export function truncateOutput(text, maxBytes) {
   };
 }
 
-export function formatResult({ host, exitCode, stdout, stderr, elapsedMs, maxOutputBytes, timedOut }) {
+export function formatResult({ host, exitCode, stdout, stderr, elapsedMs, maxOutputBytes, timedOut, failureKind }) {
+  const safeStdout = sanitizeTerminalText(stdout);
+  const safeStderr = sanitizeTerminalText(stderr);
   const sections = [
     `host: ${host}`,
     `exit: ${exitCode === null ? "none" : exitCode}`,
-    `elapsed_ms: ${elapsedMs}`,
   ];
+  if (failureKind) sections.push(`failure_kind: ${failureKind}`);
+  sections.push(`elapsed_ms: ${elapsedMs}`);
   if (timedOut) sections.push("timed_out: true");
-  if (stdout) sections.push(`\nstdout:\n${stdout}`);
-  if (stderr) sections.push(`\nstderr:\n${stderr}`);
+  if (safeStdout) sections.push(`\nstdout:\n${safeStdout}`);
+  if (safeStderr) sections.push(`\nstderr:\n${safeStderr}`);
   const result = truncateOutput(sections.join("\n"), maxOutputBytes);
   if (result.truncated) {
     result.text += `\ntruncated: true\noriginal_bytes: ${result.originalBytes}`;

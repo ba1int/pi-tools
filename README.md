@@ -27,6 +27,16 @@ for 60 seconds. This changes transport latency only: commands, results, host
 validation, timeouts, and approval behavior remain identical. Set
 `PI_SSH_MULTIPLEXING=off` to return to one new connection per call.
 
+Failed calls identify DNS, authentication, host-key, refusal, timeout,
+connection-loss, and ordinary remote-command exits in compact result metadata.
+Transport failures automatically promote the thinking router to `high`; an
+ordinary non-zero read-only command remains at the selected level.
+
+Remote stdout and stderr are stripped of terminal control sequences before
+they reach Pi context or the TUI. Printable Unicode, tabs, and newlines remain
+unchanged; ANSI cursor/color commands, OSC clipboard or hyperlink writes, DCS
+strings, carriage returns, backspaces, and other control bytes are removed.
+
 This is transport and context control, not a remote authorization system. SSH
 accounts, sudo policy, and the user's work skills remain the operational
 boundaries.

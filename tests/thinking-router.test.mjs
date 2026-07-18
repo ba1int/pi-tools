@@ -47,6 +47,8 @@ test("failures escalate only after mutation or for transport errors", () => {
   assert.equal(toolFailureRequiresEscalation({ exitCode: 1 }, true), true);
   assert.equal(toolFailureRequiresEscalation({ timedOut: true }, false), true);
   assert.equal(toolFailureRequiresEscalation({ isError: true }, false), true);
+  assert.equal(toolFailureRequiresEscalation({ exitCode: 255, transportError: true }, false), true);
+  assert.equal(toolFailureRequiresEscalation({ exitCode: 255, transportError: false }, false), false);
 });
 
 test("routing state respects manual override and automatic failure escalation", () => {
@@ -63,4 +65,12 @@ test("routing state respects manual override and automatic failure escalation", 
 
   state.setAuto();
   assert.equal(state.route("Investigate an outage.").level, "high");
+});
+
+test("transport escalation reports the actual reason", () => {
+  const state = new RoutingState();
+  assert.equal(state.route("Onboard this host into monitoring.").level, "low");
+  const escalation = state.noteRemoteResult({ exitCode: 255, transportError: true });
+  assert.equal(escalation.reason, "SSH transport failure");
+  assert.equal(state.level, "high");
 });

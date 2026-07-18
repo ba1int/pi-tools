@@ -7,12 +7,15 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
   BoundedCapture,
+  classifySshFailure,
   connectionReuseEnabled,
   formatResult,
+  isTransportFailureKind,
   looksLikeRawRemoteTransport,
   normalizeOutputLimit,
   normalizeTimeout,
   remoteProgram,
+  sanitizeTerminalText,
   sshArgs,
   validateCommand,
   validateHost,
@@ -159,7 +162,8 @@ export default function sshDirect(pi: ExtensionAPI) {
         resolvedControlPath,
         signal,
       );
-      const rendered = formatResult({ ...result, maxOutputBytes });
+      const failureKind = classifySshFailure(result);
+      const rendered = formatResult({ ...result, maxOutputBytes, failureKind });
       return {
         content: [{ type: "text", text: rendered.text }],
         details: {
@@ -170,13 +174,15 @@ export default function sshDirect(pi: ExtensionAPI) {
           truncated: rendered.truncated,
           originalBytes: rendered.originalBytes,
           connectionReuseEnabled: Boolean(resolvedControlPath),
+          failureKind,
+          transportError: isTransportFailureKind(failureKind),
         },
       };
     },
     renderCall(args, theme) {
       const host = typeof args?.host === "string" ? args.host : "...";
       const command = typeof args?.command === "string"
-        ? args.command.trim().split("\n", 1)[0].slice(0, 100)
+        ? sanitizeTerminalText(args.command).trim().split("\n", 1)[0].slice(0, 100)
         : "...";
       return new Text(
         `${theme.fg("toolTitle", theme.bold("ssh_exec"))} ${theme.fg("accent", host)} ${theme.fg("muted", command)}`,

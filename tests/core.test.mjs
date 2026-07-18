@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BoundedCapture,
+  classifySshFailure,
   connectionReuseEnabled,
   DEFAULT_OUTPUT_BYTES,
   DEFAULT_TIMEOUT_SECONDS,
   formatResult,
+  isTransportFailureKind,
   looksLikeRawRemoteTransport,
   normalizeOutputLimit,
   normalizeTimeout,
   remoteProgram,
+  sanitizeTerminalText,
   sshArgs,
   truncateOutput,
   validateHost,
@@ -45,6 +48,47 @@ test("SSH connection reuse is opt-out and adds only client control options", () 
   assert.ok(args.includes("ControlPersist=60"));
   assert.ok(args.includes("ControlPath=/tmp/pi-ssh-1000/%C"));
   assert.throws(() => sshArgs("app01", { controlPath: "" }), /controlPath/);
+});
+
+test("SSH failures distinguish transport faults from remote command exits", () => {
+  const cases = [
+    [{ exitCode: 0, stderr: "", timedOut: false }, null],
+    [{ exitCode: 7, stderr: "application failed", timedOut: false }, "remote_exit"],
+    [{ exitCode: 255, stderr: "ssh: Could not resolve hostname x: Name or service not known", timedOut: false }, "dns"],
+    [{ exitCode: 255, stderr: "nobody@app: Permission denied (publickey).", timedOut: false }, "authentication"],
+    [{ exitCode: 255, stderr: "Host key verification failed.", timedOut: false }, "host_key"],
+    [{ exitCode: 255, stderr: "ssh: connect to host app port 22: Connection refused", timedOut: false }, "connection_refused"],
+    [{ exitCode: 255, stderr: "ssh: connect to host app port 22: Operation timed out", timedOut: false }, "connection_timeout"],
+    [{ exitCode: 255, stderr: "kex_exchange_identification: Connection closed by remote host", timedOut: false }, "connection_closed"],
+    [{ exitCode: null, stderr: "", timedOut: true }, "timeout"],
+    [{ exitCode: 255, stderr: "application chose exit 255", timedOut: false }, "remote_exit"],
+  ];
+  for (const [result, expected] of cases) {
+    const actual = classifySshFailure(result);
+    assert.equal(actual, expected, JSON.stringify(result));
+  }
+  assert.equal(isTransportFailureKind("dns"), true);
+  assert.equal(isTransportFailureKind("timeout"), true);
+  assert.equal(isTransportFailureKind("remote_exit"), false);
+});
+
+test("remote output cannot inject terminal control sequences", () => {
+  const malicious = [
+    "plain\t雪\n",
+    "\u001b[31mred\u001b[0m\n",
+    "\u001b]52;c;Y2xpcGJvYXJk\u0007after\n",
+    "\u001b]8;;https://example.invalid\u0007link\u001b]8;;\u0007\n",
+    "cursor\u001b[2Jdone\n",
+    "carriage\roverwrite\n",
+    "back\bspace\n",
+    "\u001bPprivate-device-command\u001b\\\n",
+  ].join("");
+  assert.equal(
+    sanitizeTerminalText(malicious),
+    "plain\t雪\nred\nafter\nlink\ncursordone\ncarriageoverwrite\nbackspace\n\n",
+  );
+  const normal = "host=app01 status=ok\nsecond\tcolumn 雪\n";
+  assert.equal(sanitizeTerminalText(normal), normal);
 });
 
 test("remote commands are sent as Bash stdin programs", () => {
@@ -92,6 +136,34 @@ test("formatted tool results expose execution and truncation metadata", () => {
   assert.match(result.text, /host: app01/);
   assert.match(result.text, /truncated: true/);
   assert.equal(result.truncated, true);
+});
+
+test("formatted failures add compact machine-readable semantics", () => {
+  const result = formatResult({
+    host: "app01",
+    exitCode: 255,
+    stdout: "",
+    stderr: "ssh: connect to host app01 port 22: Connection refused",
+    elapsedMs: 42,
+    maxOutputBytes: 1024,
+    timedOut: false,
+    failureKind: "connection_refused",
+  });
+  assert.match(result.text, /failure_kind: connection_refused/);
+});
+
+test("formatted results sanitize remote terminal controls before rendering", () => {
+  const result = formatResult({
+    host: "app01",
+    exitCode: 0,
+    stdout: "\u001b[31mred\u001b[0m\n\u001b]52;c;cG9pc29u\u0007safe\n",
+    stderr: "",
+    elapsedMs: 42,
+    maxOutputBytes: 1024,
+    timedOut: false,
+  });
+  assert.match(result.text, /stdout:\nred\nsafe/);
+  assert.equal(/[\u001b\u0007]/.test(result.text), false);
 });
 
 test("model-generated raw remote transports are detected without blocking ordinary local commands", () => {
