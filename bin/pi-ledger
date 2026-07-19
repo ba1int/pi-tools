@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+
+import { readFileSync } from "node:fs";
+import { resolveLedgerPath, renderLedger } from "../extensions/task-ledger/core.js";
+
+const args = process.argv.slice(2);
+let once = false;
+let color = process.stdout.isTTY;
+let path = resolveLedgerPath();
+
+for (let index = 0; index < args.length; index += 1) {
+  const argument = args[index];
+  if (argument === "--once") once = true;
+  else if (argument === "--plain") color = false;
+  else if (argument === "--path") {
+    index += 1;
+    if (!args[index]) throw new Error("--path requires a value");
+    path = args[index];
+  } else if (argument === "-h" || argument === "--help") {
+    process.stdout.write("Usage: pi-ledger [--once] [--plain] [--path FILE]\n");
+    process.exit(0);
+  } else {
+    throw new Error(`unknown argument: ${argument}`);
+  }
+}
+
+function loadSnapshot() {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function frame() {
+  return renderLedger(loadSnapshot(), {
+    width: process.stdout.columns || 96,
+    height: process.stdout.rows || 30,
+    color,
+  });
+}
+
+if (once || !process.stdout.isTTY) {
+  process.stdout.write(`${frame()}\n`);
+  process.exit(0);
+}
+
+let closed = false;
+let previous = "";
+let timer;
+const close = () => {
+  if (closed) return;
+  closed = true;
+  clearInterval(timer);
+  if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  process.stdout.write("\x1b[?25h\x1b[0m\n");
+  process.exit(0);
+};
+
+process.stdout.write("\x1b[?25l");
+if (process.stdin.isTTY) {
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.on("data", (chunk) => {
+    const value = chunk.toString("utf8");
+    if (value === "q" || value === "\x1b" || value === "\x03" || value === "\x04") close();
+  });
+}
+
+const draw = () => {
+  const next = frame();
+  if (next === previous) return;
+  previous = next;
+  process.stdout.write(`\x1b[2J\x1b[H${next}`);
+};
+
+timer = setInterval(draw, 250);
+process.on("SIGINT", close);
+process.on("SIGTERM", close);
+draw();

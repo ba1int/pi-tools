@@ -10,7 +10,8 @@
     "extensions": [
       "./extensions/ssh-direct/index.ts",
       "./extensions/thinking-router/index.ts",
-      "./extensions/side-task/index.ts"
+      "./extensions/side-task/index.ts",
+      "./extensions/task-ledger/index.ts"
     ],
     "skills": [
       "./skills/incident-investigation"

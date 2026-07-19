@@ -143,7 +143,7 @@ test("package and installer expose the repository-owned side-task extension", as
     "utf8",
   );
   assert.ok(packageJson.pi.extensions.includes("./extensions/side-task/index.ts"));
-  assert.match(installer, /ssh-direct\|thinking-router\|side-task/);
+  assert.match(installer, /ssh-direct\|thinking-router\|side-task\|task-ledger/);
   assert.match(installer, /extensions\/side-task/);
   assert.match(extension, /registerCommand\("btw"/);
   assert.match(extension, /registerCommand\("aside"/);

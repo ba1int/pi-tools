@@ -1,0 +1,303 @@
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
+
+export const LEDGER_SCHEMA_VERSION = 1;
+export const MAX_LEDGER_EVENTS = 48;
+
+const ANSI_PATTERN = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)?)/g;
+const CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
+
+export function sanitizeSegment(value, fallback = "terminal") {
+  const cleaned = String(value ?? "")
+    .trim()
+    .replace(/[^A-Za-z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return cleaned || fallback;
+}
+
+export function sanitizeLedgerText(value, limit = 120) {
+  const cleaned = String(value ?? "")
+    .replace(ANSI_PATTERN, "")
+    .replace(CONTROL_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length <= limit) return cleaned;
+  return `${cleaned.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
+}
+
+export function resolveLedgerPath(environment = process.env, home = homedir()) {
+  const stateHome = environment.XDG_STATE_HOME?.trim()
+    || join(home, ".local", "state");
+  const session = sanitizeSegment(environment.ZELLIJ_SESSION_NAME, "terminal");
+  return join(stateHome, "pi-ledger", session, "current.json");
+}
+
+export function modelLabel(model) {
+  if (!model) return "unselected";
+  return sanitizeLedgerText(model.id ?? model.name ?? String(model), 48) || "unselected";
+}
+
+export function createLedgerSnapshot({ sessionId, sessionName, cwd, model, thinking, now = Date.now() }) {
+  return {
+    schemaVersion: LEDGER_SCHEMA_VERSION,
+    sessionId: sanitizeSegment(sessionId, "ephemeral"),
+    sessionName: sanitizeLedgerText(sessionName || "unnamed", 48),
+    cwd: sanitizeLedgerText(cwd, 96),
+    model: modelLabel(model),
+    thinking: sanitizeLedgerText(thinking || "unknown", 16),
+    taskOrdinal: 0,
+    taskId: null,
+    prompt: "",
+    state: "idle",
+    startedAt: null,
+    updatedAt: now,
+    finishedAt: null,
+    cost: 0,
+    tokens: 0,
+    error: null,
+    nextSequence: 1,
+    events: [],
+  };
+}
+
+export function appendLedgerEvent(snapshot, {
+  kind,
+  detail = "",
+  status = "note",
+  at = Date.now(),
+  elapsedMs = null,
+}, maxEvents = MAX_LEDGER_EVENTS) {
+  const sequence = snapshot.nextSequence;
+  snapshot.nextSequence += 1;
+  snapshot.events.push({
+    sequence,
+    at,
+    kind: sanitizeLedgerText(kind, 18).toUpperCase(),
+    detail: sanitizeLedgerText(detail, 160),
+    status: sanitizeLedgerText(status, 16).toLowerCase(),
+    elapsedMs: Number.isFinite(elapsedMs) ? Math.max(0, Math.round(elapsedMs)) : null,
+  });
+  if (snapshot.events.length > maxEvents) {
+    snapshot.events.splice(0, snapshot.events.length - maxEvents);
+  }
+  snapshot.updatedAt = at;
+  return sequence;
+}
+
+export function updateLedgerEvent(snapshot, sequence, updates, now = Date.now()) {
+  const event = snapshot.events.find((candidate) => candidate.sequence === sequence);
+  if (!event) return false;
+  if (updates.detail !== undefined) event.detail = sanitizeLedgerText(updates.detail, 160);
+  if (updates.status !== undefined) event.status = sanitizeLedgerText(updates.status, 16).toLowerCase();
+  if (Number.isFinite(updates.elapsedMs)) event.elapsedMs = Math.max(0, Math.round(updates.elapsedMs));
+  snapshot.updatedAt = now;
+  return true;
+}
+
+export function startLedgerTask(snapshot, { prompt, thinking, model, now = Date.now() }) {
+  snapshot.taskOrdinal += 1;
+  snapshot.taskId = `${snapshot.sessionId.slice(0, 8)}-${String(snapshot.taskOrdinal).padStart(3, "0")}`;
+  snapshot.prompt = sanitizeLedgerText(prompt, 180);
+  snapshot.model = modelLabel(model);
+  snapshot.thinking = sanitizeLedgerText(thinking || "unknown", 16);
+  snapshot.state = "queued";
+  snapshot.startedAt = now;
+  snapshot.updatedAt = now;
+  snapshot.finishedAt = null;
+  snapshot.cost = 0;
+  snapshot.tokens = 0;
+  snapshot.error = null;
+  snapshot.nextSequence = 1;
+  snapshot.events = [];
+  appendLedgerEvent(snapshot, {
+    kind: "route",
+    detail: `thinking ${snapshot.thinking}`,
+    status: snapshot.thinking,
+    at: now,
+  });
+  return snapshot;
+}
+
+export function toolLedgerDetail(toolName, args = {}) {
+  const name = String(toolName ?? "tool");
+  if (name === "ssh_exec") {
+    return sanitizeLedgerText(args.host ? String(args.host) : "remote host", 96);
+  }
+  if (["read", "edit", "write", "ls", "find"].includes(name)) {
+    return sanitizeLedgerText(args.path ? String(args.path) : "local workspace", 96);
+  }
+  if (name === "grep") {
+    return sanitizeLedgerText(args.path ? String(args.path) : "workspace search", 96);
+  }
+  if (name === "bash") return "local shell";
+  return sanitizeLedgerText(name.replaceAll("_", " "), 96);
+}
+
+export function toolLedgerKind(toolName) {
+  if (toolName === "ssh_exec") return "ssh";
+  if (["read", "edit", "write", "grep", "find", "ls"].includes(toolName)) return toolName;
+  return "tool";
+}
+
+export function toolLedgerOutcome(result, isError = false) {
+  const details = result?.details ?? {};
+  const exitCode = Number.isInteger(details.exitCode) ? details.exitCode : null;
+  if (details.timedOut === true) return { status: "fail", note: "timeout" };
+  if (details.failureKind) {
+    return {
+      status: details.failureKind === "remote_exit" && exitCode === 0 ? "ok" : "fail",
+      note: sanitizeLedgerText(details.failureKind, 40),
+    };
+  }
+  if (isError || (exitCode !== null && exitCode !== 0)) {
+    return { status: "fail", note: exitCode === null ? "error" : `exit ${exitCode}` };
+  }
+  return { status: "ok", note: "" };
+}
+
+export function recordAssistantUsage(snapshot, message) {
+  if (message?.role !== "assistant") return;
+  const cost = Number(message.usage?.cost?.total);
+  const tokens = Number(message.usage?.totalTokens);
+  if (Number.isFinite(cost)) snapshot.cost += Math.max(0, cost);
+  if (Number.isFinite(tokens)) snapshot.tokens += Math.max(0, tokens);
+  if (message.stopReason === "error" || message.stopReason === "aborted") {
+    snapshot.error = sanitizeLedgerText(message.errorMessage || message.stopReason, 120);
+  }
+}
+
+function clip(value, width) {
+  const text = sanitizeLedgerText(value, Math.max(1, width));
+  if (text.length <= width) return text;
+  return `${text.slice(0, Math.max(1, width - 1))}…`;
+}
+
+function pad(value, width) {
+  const text = clip(value, width);
+  return text + " ".repeat(Math.max(0, width - text.length));
+}
+
+function elapsedLabel(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "—";
+  const seconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+}
+
+function clockLabel(timestamp) {
+  if (!Number.isFinite(timestamp)) return "--:--:--";
+  return new Date(timestamp).toISOString().slice(11, 19);
+}
+
+const ANSI = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  ink: "\x1b[38;2;243;240;231m",
+  text: "\x1b[38;2;232;225;210m",
+  muted: "\x1b[38;2;141;143;134m",
+  rule: "\x1b[38;2;68;70;63m",
+  teal: "\x1b[38;2;120;184;179m",
+  coral: "\x1b[38;2;239;91;76m",
+};
+
+function paint(value, style, enabled) {
+  if (!enabled) return value;
+  return `${style}${value}${ANSI.reset}`;
+}
+
+function statusStyle(status) {
+  if (["fail", "failed", "error", "aborted", "stopped"].includes(status)) return ANSI.coral;
+  if (["run", "running", "low", "high", "xhigh", "medium"].includes(status)) return ANSI.teal;
+  return ANSI.ink;
+}
+
+export function renderLedger(snapshot, {
+  width = 96,
+  height = 30,
+  color = true,
+  now = Date.now(),
+} = {}) {
+  const columns = Math.max(58, Math.min(160, Math.floor(width || 96)));
+  const rows = Math.max(16, Math.floor(height || 30));
+  const rule = "─".repeat(columns);
+  const lines = [];
+
+  if (!snapshot || snapshot.schemaVersion !== LEDGER_SCHEMA_VERSION) {
+    lines.push(paint(pad("PI / TASK LEDGER", columns), ANSI.bold + ANSI.ink, color));
+    lines.push(paint(rule, ANSI.rule, color));
+    lines.push("");
+    lines.push(paint("NO ACTIVE RECORD", ANSI.bold + ANSI.muted, color));
+    lines.push(paint("Start Pi and submit a task in this Zellij session.", ANSI.muted, color));
+    lines.push("");
+    lines.push(paint(rule, ANSI.rule, color));
+    lines.push(paint("q close · local event feed · zero extra model tokens", ANSI.muted, color));
+    return lines.join("\n");
+  }
+
+  const state = String(snapshot.state || "idle").toUpperCase();
+  const elapsed = snapshot.startedAt
+    ? elapsedLabel((snapshot.finishedAt || now) - snapshot.startedAt)
+    : "—";
+  const headerRight = `${state}  ${elapsed}`;
+  lines.push(
+    paint("PI / TASK LEDGER", ANSI.bold + ANSI.ink, color)
+      + " ".repeat(Math.max(1, columns - 16 - headerRight.length))
+      + paint(headerRight, ANSI.bold + statusStyle(String(snapshot.state)), color),
+  );
+  lines.push(paint(rule, ANSI.rule, color));
+  lines.push(
+    `${paint("RECORD", ANSI.muted, color)}  ${paint(snapshot.taskId || "—", ANSI.text, color)}`
+      + `   ${paint("SESSION", ANSI.muted, color)}  ${paint(snapshot.sessionName || snapshot.sessionId, ANSI.text, color)}`,
+  );
+  lines.push(
+    `${paint("MODEL ", ANSI.muted, color)}  ${paint(snapshot.model, ANSI.text, color)}`
+      + `   ${paint("THINK", ANSI.muted, color)}  ${paint(String(snapshot.thinking).toUpperCase(), ANSI.teal, color)}`
+      + `   ${paint("COST", ANSI.muted, color)}  ${paint(`$${Number(snapshot.cost || 0).toFixed(3)}`, ANSI.text, color)}`,
+  );
+  lines.push(paint("TASK", ANSI.muted, color));
+  lines.push(paint(clip(snapshot.prompt || "Waiting for a task.", columns), ANSI.ink, color));
+  lines.push(paint(rule, ANSI.rule, color));
+
+  const fixed = 4 + 1 + 8 + 1 + 12 + 1 + 10 + 3;
+  const detailWidth = Math.max(18, columns - fixed);
+  lines.push(
+    paint(
+      `${pad("SEQ", 4)} ${pad("TIME", 8)} ${pad("RECORD", 12)} ${pad("DETAIL", detailWidth)} ${pad("STATE", 10)}`,
+      ANSI.muted,
+      color,
+    ),
+  );
+  lines.push(paint(rule, ANSI.rule, color));
+
+  const availableEvents = Math.max(1, rows - lines.length - 3);
+  const events = Array.isArray(snapshot.events) ? snapshot.events.slice(-availableEvents) : [];
+  if (events.length === 0) {
+    lines.push(paint("—    --:--:--  WAITING      No checkpoints recorded.", ANSI.muted, color));
+  } else {
+    for (const event of events) {
+      const elapsedSuffix = Number.isFinite(event.elapsedMs)
+        ? ` · ${event.elapsedMs < 1000 ? `${event.elapsedMs}ms` : `${(event.elapsedMs / 1000).toFixed(1)}s`}`
+        : "";
+      const detail = `${event.detail || "—"}${elapsedSuffix}`;
+      const raw = `${pad(String(event.sequence).padStart(3, "0"), 4)} ${pad(clockLabel(event.at), 8)} ${pad(event.kind, 12)} ${pad(detail, detailWidth)} `;
+      lines.push(
+        paint(raw, ANSI.text, color)
+          + paint(pad(String(event.status).toUpperCase(), 10), statusStyle(String(event.status)), color),
+      );
+    }
+  }
+
+  while (lines.length < rows - 2) lines.push("");
+  lines.push(paint(rule, ANSI.rule, color));
+  lines.push(paint("q close · live event feed · local only · zero extra model tokens", ANSI.muted, color));
+  return lines.join("\n");
+}
+
+export function ledgerCwdLabel(cwd) {
+  return basename(String(cwd || "")) || "~";
+}

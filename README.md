@@ -112,6 +112,21 @@ window can invalidate cached work. `PI_CACHE_RETENTION=long` requests longer
 retention only where the selected provider supports it. Pi's footer reports
 cache read (`R`), write (`W`), and hit (`CH`) metrics.
 
+## Task ledger
+
+`task-ledger` records Pi's existing lifecycle events into one bounded,
+session-scoped local snapshot. It captures the current task, selected model and
+thinking level, tool target, elapsed time, outcome, cost, and completion state.
+It never adds messages to model context, calls another model, stores raw command
+output, or records hidden reasoning. The snapshot retains at most 48 checkpoint
+rows beneath `${XDG_STATE_HOME:-~/.local/state}/pi-ledger` with user-only
+permissions.
+
+Run `pi-ledger` to follow the current record. The workstation dotfiles bind
+`Ctrl+o`, then `i` to open the same viewer in a single Zellij floating pane;
+press `q` to close it. Floating `/btw` side conversations do not replace the
+primary ledger. Set `PI_TASK_LEDGER=off` to disable recording.
+
 ## Install
 
 Node.js 22.19 or newer is required.
@@ -122,9 +137,9 @@ Node.js 22.19 or newer is required.
 
 The installer pins Pi to `pi-version.txt`, removes every configured third-party
 Pi package, retires every other global extension into a timestamped backup,
-links the repository-owned extensions and generic incident skill, and installs
-the Protocol Ink Pi theme. It preserves authentication, sessions, models, and
-all other skills.
+links the repository-owned extensions, task-ledger viewer, and generic incident
+skill, and installs the Protocol Ink Pi theme. It preserves authentication,
+sessions, models, and all other skills.
 
 Restart Pi or run `/reload` after updating the extension.
 
