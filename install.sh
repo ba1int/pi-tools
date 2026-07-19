@@ -66,7 +66,7 @@ set +f
 for extension_path in "$extensions_dir"/*; do
     [ -e "$extension_path" ] || [ -L "$extension_path" ] || continue
     case "$(basename -- "$extension_path")" in
-        ssh-direct|thinking-router|side-task|task-ledger) continue ;;
+        appearance-sync|ssh-direct|thinking-router|side-task|task-ledger) continue ;;
     esac
     mkdir -p "$retired_dir"
     mv "$extension_path" "$retired_dir/"
@@ -93,6 +93,7 @@ link_path() {
 }
 
 link_path "$repo_root/extensions/ssh-direct" "$extensions_dir/ssh-direct"
+link_path "$repo_root/extensions/appearance-sync" "$extensions_dir/appearance-sync"
 link_path "$repo_root/extensions/thinking-router" "$extensions_dir/thinking-router"
 link_path "$repo_root/extensions/side-task" "$extensions_dir/side-task"
 link_path "$repo_root/extensions/task-ledger" "$extensions_dir/task-ledger"
@@ -100,6 +101,7 @@ link_path "$repo_root/bin/pi-ledger" "$npm_prefix/bin/pi-ledger"
 link_path "$repo_root/skills/incident-investigation" \
     "$agent_dir/skills/incident-investigation"
 link_path "$repo_root/themes/protocol-ink.json" "$agent_dir/themes/protocol-ink.json"
+link_path "$repo_root/themes/protocol-paper.json" "$agent_dir/themes/protocol-paper.json"
 
 mkdir -p "$agent_dir"
 temporary_settings="$settings_path.pi-tools.$$"
@@ -108,7 +110,7 @@ const fs = require('node:fs');
 const [settingsPath, temporaryPath] = process.argv.slice(2);
 let settings = {};
 if (fs.existsSync(settingsPath)) settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-settings.theme = 'protocol-ink';
+settings.theme = 'protocol-paper/protocol-ink';
 settings.externalEditor = 'nvim';
 delete settings.packages;
 fs.writeFileSync(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });

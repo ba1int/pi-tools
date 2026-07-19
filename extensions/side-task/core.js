@@ -31,6 +31,22 @@ export function isCompletedBranch(branch) {
   return false;
 }
 
+export function findLatestCompletedAssistantEntryId(branch) {
+  for (let index = branch.length - 1; index >= 0; index -= 1) {
+    const entry = branch[index];
+    if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+    if (
+      entry.message.stopReason === "toolUse"
+      || entry.message.stopReason === "aborted"
+      || entry.message.stopReason === "error"
+    ) {
+      continue;
+    }
+    return typeof entry.id === "string" && entry.id.length > 0 ? entry.id : undefined;
+  }
+  return undefined;
+}
+
 export function findSideMetadata(branch) {
   for (let index = branch.length - 1; index >= 0; index -= 1) {
     const entry = branch[index];

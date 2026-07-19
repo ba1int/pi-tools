@@ -8,6 +8,7 @@
   },
   "pi": {
     "extensions": [
+      "./extensions/appearance-sync/index.ts",
       "./extensions/ssh-direct/index.ts",
       "./extensions/thinking-router/index.ts",
       "./extensions/side-task/index.ts",

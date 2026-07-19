@@ -6,6 +6,7 @@ import {
   buildBoundary,
   buildLaunchCommand,
   buildZellijPaneArgs,
+  findLatestCompletedAssistantEntryId,
   findSideMetadata,
   isCompletedBranch,
   isFloatingSidePane,
@@ -109,6 +110,47 @@ test("a side branch must end in a completed assistant response", () => {
   assert.equal(isCompletedBranch([]), false);
 });
 
+test("an aside snapshots the latest completed response while a newer turn is active", () => {
+  const complete = {
+    id: "assistant-complete",
+    type: "message",
+    message: { role: "assistant", stopReason: "stop" },
+  };
+  const activeUser = {
+    id: "user-active",
+    type: "message",
+    message: { role: "user", content: "long-running task" },
+  };
+  const activeToolUse = {
+    id: "assistant-tool-use",
+    type: "message",
+    message: { role: "assistant", stopReason: "toolUse" },
+  };
+  const activeToolResult = {
+    id: "tool-result",
+    type: "message",
+    message: { role: "toolResult", content: "partial result" },
+  };
+
+  assert.equal(
+    findLatestCompletedAssistantEntryId([
+      complete,
+      activeUser,
+      activeToolUse,
+      activeToolResult,
+    ]),
+    "assistant-complete",
+  );
+  assert.equal(
+    findLatestCompletedAssistantEntryId([
+      activeUser,
+      activeToolUse,
+      activeToolResult,
+    ]),
+    undefined,
+  );
+});
+
 test("valid side metadata is recovered from the active branch", () => {
   const entry = { type: "custom", customType: SIDE_TASK_TYPE, data: metadata };
   assert.deepEqual(findSideMetadata([{ type: "message" }, entry, { type: "message" }]), metadata);
@@ -147,4 +189,5 @@ test("package and installer expose the repository-owned side-task extension", as
   assert.match(installer, /extensions\/side-task/);
   assert.match(extension, /registerCommand\("btw"/);
   assert.match(extension, /registerCommand\("aside"/);
+  assert.doesNotMatch(extension, /waitForIdle/);
 });

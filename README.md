@@ -80,9 +80,12 @@ and per-model options.
 
 ## Side conversations
 
-`/btw <question>` clones the completed active branch into a separate Pi session
-while leaving the parent session and pane untouched. `/aside` remains an alias,
-and `Ctrl+Shift+A` opens a prompt for the same action. Inside Zellij, Pi
+`/btw <question>` clones the branch through its latest completed assistant
+response into a separate Pi session while leaving the parent session and pane
+untouched. It works while the parent is still responding: the active partial
+turn is deliberately excluded from the snapshot, matching Codex thread-fork
+semantics. `/aside` remains an alias, and `Ctrl+Shift+A` opens a prompt for the
+same action. Inside Zellij, Pi
 automatically opens the child in a focused 85% floating pane; exiting that Pi
 process closes the float and reveals the untouched parent. Outside Zellij, or
 if pane creation fails, Pi displays a shell-safe `pi --session ...` fallback
@@ -160,9 +163,16 @@ Node.js 22.19 or newer is required.
 The installer pins Pi to `pi-version.txt`, removes every configured third-party
 Pi package, retires every other global extension into a timestamped backup,
 links the repository-owned extensions, task-ledger viewer, and generic incident
-skill, installs the Protocol Ink Pi theme, and merges the repository-owned Sol
-context budget. It preserves authentication, sessions, unrelated model
+skill, installs paired Protocol Paper/Ink Pi themes that follow the terminal's
+reported light/dark appearance, and merges the repository-owned Sol context
+budget. It preserves authentication, sessions, unrelated model
 configuration, and all other skills.
+
+The dependency-free `appearance-sync` extension keeps Pi and its containing
+Zellij session aligned with macOS while Pi is open. It checks every two seconds
+on macOS and every ten seconds in WSL, performs no model calls, and passes Pi a
+live theme object so the paired setting remains intact. Ordinary shell prompts
+also synchronize Zellij, so no always-running watcher or service is installed.
 
 Restart Pi or run `/reload` after updating the extension.
 

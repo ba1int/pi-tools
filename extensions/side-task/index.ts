@@ -11,8 +11,8 @@ import {
   buildBoundary,
   buildLaunchCommand,
   buildZellijPaneArgs,
+  findLatestCompletedAssistantEntryId,
   findSideMetadata,
-  isCompletedBranch,
   isFloatingSidePane,
   isInsideZellij,
   isReadOnlyTool,
@@ -48,24 +48,17 @@ async function createSideTask(
   ctx: ExtensionContext,
   suppliedTask: string,
 ): Promise<void> {
-  if (!ctx.isIdle()) {
-    ctx.ui.notify("Wait for the current response to finish before starting an aside", "warning");
-    return;
-  }
-
   const task = await askForTask(ctx, suppliedTask);
   if (!task) return;
 
   const parentSessionFile = ctx.sessionManager.getSessionFile();
-  const originEntryId = ctx.sessionManager.getLeafId();
-  if (!parentSessionFile || !originEntryId || !existsSync(parentSessionFile)) {
-    ctx.ui.notify("The current conversation must be saved before it can be cloned", "error");
-    return;
-  }
-
   const branch = ctx.sessionManager.getBranch();
-  if (!isCompletedBranch(branch)) {
-    ctx.ui.notify("An aside can start only after a completed assistant response", "warning");
+  const originEntryId = findLatestCompletedAssistantEntryId(branch);
+  if (!parentSessionFile || !originEntryId || !existsSync(parentSessionFile)) {
+    ctx.ui.notify(
+      "A saved, completed assistant response is required before starting an aside",
+      "error",
+    );
     return;
   }
 
@@ -159,19 +152,13 @@ async function returnToParent(ctx: ExtensionCommandContext): Promise<void> {
 
 export default function sideTaskExtension(pi: ExtensionAPI) {
   pi.registerCommand("btw", {
-    description: "Start a read-only side question from the completed current branch",
-    handler: async (args, ctx) => {
-      await ctx.waitForIdle();
-      await createSideTask(pi, ctx, args);
-    },
+    description: "Start a read-only side question from the latest completed response",
+    handler: async (args, ctx) => createSideTask(pi, ctx, args),
   });
 
   pi.registerCommand("aside", {
     description: "Alias for /btw: start a read-only side conversation",
-    handler: async (args, ctx) => {
-      await ctx.waitForIdle();
-      await createSideTask(pi, ctx, args);
-    },
+    handler: async (args, ctx) => createSideTask(pi, ctx, args),
   });
 
   pi.registerShortcut("ctrl+shift+a", {
