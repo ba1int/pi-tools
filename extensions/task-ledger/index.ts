@@ -20,6 +20,7 @@ import {
   toolLedgerDetail,
   toolLedgerKind,
   toolLedgerOutcome,
+  updateLedgerFocus,
   updateLedgerEvent,
 } from "./core.js";
 
@@ -94,6 +95,7 @@ export default function taskLedger(pi: ExtensionAPI) {
         detail: event.text,
         status: "queued",
       });
+      updateLedgerFocus(snapshot, event.text);
       save();
       return { action: "continue" as const };
     }

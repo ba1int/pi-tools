@@ -123,6 +123,11 @@ model context, call another model, store raw command output, or record hidden
 reasoning. Each snapshot retains at most 48 checkpoint rows beneath
 `${XDG_STATE_HOME:-~/.local/state}/pi-ledger` with user-only permissions.
 
+The displayed task follows substantial user pivots, including queued follow-ups
+and steering messages. A small local relevance score promotes concrete actions,
+hosts, incidents, and ticket-like identifiers while ignoring acknowledgements
+and generic prompts such as “continue” or “check again”; it makes no model call.
+
 Run `pi-ledger` to follow the current record. With one Pi pane it opens the
 detailed ledger; with several it opens the Protocol Ink agent board. Use
 `↑`/`↓` or `j`/`k` to select an agent, `Enter` to jump to its Zellij pane, and

@@ -68,8 +68,8 @@ function frame() {
     return renderAgentBoard(state.records, { ...options, selectedKey });
   }
   const footer = state.records.length > 1
-    ? "b board · enter jump · q close · local only · zero extra model tokens"
-    : "q close · live event feed · local only · zero extra model tokens";
+    ? "b board · enter jump · q close"
+    : "q close";
   return renderLedger(state.snapshot, { ...options, footer });
 }
 

@@ -8,6 +8,11 @@ export const FINISHED_VISIBILITY_MS = 30 * 60 * 1000;
 
 const ANSI_PATTERN = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)?)/g;
 const CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
+const TRIVIAL_FOCUS_PATTERN = /^(?:(?:hi|hello|hey|yo|thanks|thank you|okay|ok|cool|nice|great|awesome|got it|sounds good|continue|carry on|go ahead|do it|yes|no|yep|nope)(?:\s+please)?|what(?:'s| is) (?:the )?(?:time|date)(?:\s+(?:now|today))?|how are you|who are you)\s*[.!?]*$/i;
+const GENERIC_FOLLOW_UP_PATTERN = /^(?:(?:can|could|would) you\s+|please\s+)?(?:check|fix|inspect|look into|review|retry|try|update)(?:\s+(?:again|it|that|them|these|this|those))?\s*[.!?]*$/i;
+const TASK_ACTION_PATTERN = /\b(?:add|analy[sz]e|build|check|configure|create|debug|deploy|diagnose|fix|implement|inspect|install|investigate|look into|migrate|monitor|onboard|repair|replace|restart|restore|review|set up|troubleshoot|update|upgrade|validate|verify|wire)\b/i;
+const OPS_CONTEXT_PATTERN = /\b(?:alert|certificate|cpu|database|db|disk|error|failed|failure|host|icinga|incident|latency|memory|middleware|nagios|openvpn|prod|production|route|server|service|ssh|timeout|ticket|vpn)\b/i;
+const TASK_IDENTIFIER_PATTERN = /\b(?:[A-Z][A-Z0-9]+-\d+|[a-z0-9]+(?:[-.][a-z0-9]+){1,})\b/i;
 
 export function sanitizeSegment(value, fallback = "terminal") {
   const cleaned = String(value ?? "")
@@ -26,6 +31,42 @@ export function sanitizeLedgerText(value, limit = 120) {
     .trim();
   if (cleaned.length <= limit) return cleaned;
   return `${cleaned.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
+}
+
+export function ledgerFocusScore(value) {
+  const text = sanitizeLedgerText(value, 180);
+  if (!text
+      || /^[!/]/.test(text)
+      || TRIVIAL_FOCUS_PATTERN.test(text)
+      || GENERIC_FOLLOW_UP_PATTERN.test(text)) return 0;
+  const words = text.match(/[A-Za-z0-9][A-Za-z0-9_.-]*/g) || [];
+  let score = Math.min(2, Math.floor(words.length / 4));
+  if (TASK_ACTION_PATTERN.test(text)) score += 3;
+  if (OPS_CONTEXT_PATTERN.test(text)) score += 2;
+  if (TASK_IDENTIFIER_PATTERN.test(text)) score += 1;
+  if (text.length >= 64) score += 1;
+  return score;
+}
+
+export function selectLedgerFocus(current, candidate) {
+  const previous = sanitizeLedgerText(current, 180);
+  const next = sanitizeLedgerText(candidate, 180);
+  if (!next) return previous;
+  if (!previous) return next;
+
+  const previousScore = ledgerFocusScore(previous);
+  const nextScore = ledgerFocusScore(next);
+  if (nextScore >= 3) return next;
+  if (previousScore >= 3) return previous;
+  return nextScore > previousScore ? next : previous;
+}
+
+export function updateLedgerFocus(snapshot, candidate, now = Date.now()) {
+  const next = selectLedgerFocus(snapshot.prompt, candidate);
+  if (!next || next === snapshot.prompt) return false;
+  snapshot.prompt = next;
+  snapshot.updatedAt = now;
+  return true;
 }
 
 export function resolveLedgerDirectory(environment = process.env, home = homedir()) {
@@ -128,9 +169,10 @@ export function updateLedgerEvent(snapshot, sequence, updates, now = Date.now())
 }
 
 export function startLedgerTask(snapshot, { prompt, thinking, model, now = Date.now() }) {
+  const focus = selectLedgerFocus(snapshot.prompt, prompt);
   snapshot.taskOrdinal += 1;
   snapshot.taskId = `${snapshot.sessionId.slice(0, 8)}-${String(snapshot.taskOrdinal).padStart(3, "0")}`;
-  snapshot.prompt = sanitizeLedgerText(prompt, 180);
+  snapshot.prompt = focus;
   snapshot.model = modelLabel(model);
   snapshot.thinking = sanitizeLedgerText(thinking || "unknown", 16);
   snapshot.state = "queued";
@@ -426,7 +468,7 @@ export function renderAgentBoard(records, {
   while (lines.length < rows - 2) lines.push("");
   lines.push(paint(rule, ANSI.rule, color));
   lines.push(paint(
-    clip("↑/↓ select · enter jump · d detail · q close · zero extra model tokens", columns),
+    clip("↑/↓ select · enter jump · d detail · q close", columns),
     ANSI.muted,
     color,
   ));
@@ -438,7 +480,7 @@ export function renderLedger(snapshot, {
   height = 30,
   color = true,
   now = Date.now(),
-  footer = "q close · live event feed · local only · zero extra model tokens",
+  footer = "q close",
   showTitle = true,
 } = {}) {
   const columns = Math.max(58, Math.min(160, Math.floor(width || 96)));

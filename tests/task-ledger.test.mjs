@@ -9,6 +9,7 @@ import {
   appendLedgerEvent,
   createLedgerSnapshot,
   ledgerDisplayState,
+  ledgerFocusScore,
   loadLedgerRecords,
   renderAgentBoard,
   renderLedger,
@@ -16,9 +17,11 @@ import {
   resolveLedgerDirectory,
   resolveLedgerPath,
   sanitizeLedgerText,
+  selectLedgerFocus,
   startLedgerTask,
   toolLedgerDetail,
   toolLedgerOutcome,
+  updateLedgerFocus,
   updateLedgerEvent,
 } from "../extensions/task-ledger/core.js";
 import {
@@ -50,6 +53,43 @@ test("ledger paths are session and pane scoped without a shared writer file", ()
 test("ledger text strips terminal controls and remains bounded", () => {
   assert.equal(sanitizeLedgerText("inspect\n\x1b[31mprod\x1b[0m\t now", 80), "inspect prod now");
   assert.equal(sanitizeLedgerText("abcdefgh", 5), "abcd…");
+});
+
+test("adaptive focus promotes concrete work and ignores conversational churn", () => {
+  assert.equal(ledgerFocusScore("What's the time?"), 0);
+  assert.equal(ledgerFocusScore("thanks"), 0);
+  assert.equal(ledgerFocusScore("check again"), 0);
+  assert.equal(ledgerFocusScore("could you fix it?"), 0);
+  assert.ok(ledgerFocusScore("Investigate the Icinga alert on prod-app01.") >= 3);
+  assert.equal(
+    selectLedgerFocus("What's the time?", "Investigate the Icinga alert on prod-app01."),
+    "Investigate the Icinga alert on prod-app01.",
+  );
+  assert.equal(
+    selectLedgerFocus("Investigate the Icinga alert on prod-app01.", "what did you find?"),
+    "Investigate the Icinga alert on prod-app01.",
+  );
+
+  const snapshot = createLedgerSnapshot({
+    sessionId: "focus-session",
+    sessionName: "ops",
+    cwd: "/work",
+    model: { id: "gpt-5.6-sol" },
+    thinking: "high",
+  });
+  startLedgerTask(snapshot, {
+    prompt: "What's the time?",
+    thinking: "high",
+    model: { id: "gpt-5.6-sol" },
+  });
+  assert.equal(updateLedgerFocus(snapshot, "Fix the OpenVPN route on dc2-relay."), true);
+  assert.equal(snapshot.prompt, "Fix the OpenVPN route on dc2-relay.");
+  startLedgerTask(snapshot, {
+    prompt: "thanks",
+    thinking: "high",
+    model: { id: "gpt-5.6-sol" },
+  });
+  assert.equal(snapshot.prompt, "Fix the OpenVPN route on dc2-relay.");
 });
 
 test("task snapshots retain a bounded, updateable event ledger", () => {
@@ -122,6 +162,8 @@ test("plain renderer produces a Protocol Ink record without ANSI escapes", () =>
   assert.match(output, /RUNNING\s+00:03/);
   assert.match(output, /Wire lab-dev-app01 into Icinga/);
   assert.match(output, /ROUTE.*thinking low.*LOW/);
+  assert.equal(output.split("\n").at(-1), "q close");
+  assert.doesNotMatch(output, /zero extra model tokens|local only|live event feed/);
   assert.doesNotMatch(output, /\x1b/);
 });
 

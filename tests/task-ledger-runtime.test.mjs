@@ -107,6 +107,52 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
   }
 });
 
+test("streamed follow-ups promote a concrete task over an incidental opener", async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), "pi-ledger-focus-"));
+  const previous = {
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+    ZELLIJ_SESSION_NAME: process.env.ZELLIJ_SESSION_NAME,
+    ZELLIJ_PANE_ID: process.env.ZELLIJ_PANE_ID,
+    PI_SIDE_TASK_FLOAT: process.env.PI_SIDE_TASK_FLOAT,
+  };
+  process.env.XDG_STATE_HOME = stateHome;
+  process.env.ZELLIJ_SESSION_NAME = "ops";
+  process.env.ZELLIJ_PANE_ID = "terminal_8";
+  delete process.env.PI_SIDE_TASK_FLOAT;
+
+  try {
+    const { handlers, ctx } = harness();
+    await handlers.get("session_start")({}, ctx);
+    await handlers.get("input")({
+      source: "interactive",
+      text: "What's the time?",
+    }, ctx);
+    await handlers.get("input")({
+      source: "interactive",
+      text: "Investigate the Icinga alert on lab-prod-app01.",
+      streamingBehavior: "followUp",
+    }, ctx);
+    await handlers.get("input")({
+      source: "interactive",
+      text: "what did you find?",
+      streamingBehavior: "followUp",
+    }, ctx);
+
+    const snapshot = JSON.parse(readFileSync(
+      join(stateHome, "pi-ledger", "ops", "agents", "pane-terminal_8.json"),
+      "utf8",
+    ));
+    assert.equal(snapshot.prompt, "Investigate the Icinga alert on lab-prod-app01.");
+    assert.equal(snapshot.events.filter((event) => event.kind === "FOLLOW-UP").length, 2);
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    rmSync(stateHome, { recursive: true, force: true });
+  }
+});
+
 test("three concurrent pane writers retain independent task records", async () => {
   const stateHome = mkdtempSync(join(tmpdir(), "pi-ledger-concurrent-"));
   const previous = {
