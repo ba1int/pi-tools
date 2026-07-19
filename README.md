@@ -66,6 +66,18 @@ a manual override for the current session. `/think auto` restores automatic
 routing; `/think low`, `/think high`, and `/think status` are available for
 explicit control. Set `PI_THINKING_ROUTER=off` for controlled benchmarks.
 
+## Context budget
+
+GPT-5.6 Sol uses a 272,000-token context window through the `openai-codex`
+provider. Pi's native 16,384-token response reserve therefore starts automatic
+compaction at about 255,616 tokens. This keeps a large working set while
+avoiding the cache-read overhead observed with the 372,000-token window.
+
+The limit is a plain model override in `config/models.json`; there is no custom
+compactor or extra model call. The installer merges the override into the
+machine-local `models.json` and preserves unrelated providers, custom models,
+and per-model options.
+
 ## Side conversations
 
 `/btw <question>` clones the completed active branch into a separate Pi session
@@ -148,8 +160,9 @@ Node.js 22.19 or newer is required.
 The installer pins Pi to `pi-version.txt`, removes every configured third-party
 Pi package, retires every other global extension into a timestamped backup,
 links the repository-owned extensions, task-ledger viewer, and generic incident
-skill, and installs the Protocol Ink Pi theme. It preserves authentication,
-sessions, models, and all other skills.
+skill, installs the Protocol Ink Pi theme, and merges the repository-owned Sol
+context budget. It preserves authentication, sessions, unrelated model
+configuration, and all other skills.
 
 Restart Pi or run `/reload` after updating the extension.
 

@@ -41,3 +41,18 @@ test("installer links the incident skill without retiring domain skills", async 
   assert.match(installer, /extensions\/task-ledger" "\$extensions_dir\/task-ledger"/);
   assert.match(installer, /bin\/pi-ledger" "\$npm_prefix\/bin\/pi-ledger"/);
 });
+
+test("installer applies the repository-owned Sol context budget", async () => {
+  const installer = await readFile(join(root, "install.sh"), "utf8");
+  const models = JSON.parse(
+    await readFile(join(root, "config", "models.json"), "utf8"),
+  );
+
+  assert.equal(
+    models.providers["openai-codex"].modelOverrides["gpt-5.6-sol"]
+      .contextWindow,
+    272000,
+  );
+  assert.match(installer, /config\/models\.json/);
+  assert.match(installer, /merge\(models, fragment\)/);
+});

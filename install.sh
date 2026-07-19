@@ -44,6 +44,7 @@ else
 fi
 
 settings_path="$agent_dir/settings.json"
+models_path="$agent_dir/models.json"
 if [ -f "$settings_path" ]; then
     node - "$settings_path" <<'NODE' | while IFS= read -r package_source; do
 const fs = require('node:fs');
@@ -116,5 +117,32 @@ mv "$temporary_settings" "$settings_path"
 chmod 0600 "$settings_path"
 printf 'merge   %s\n' "$settings_path"
 
+temporary_models="$models_path.pi-tools.$$"
+node - "$models_path" "$repo_root/config/models.json" "$temporary_models" <<'NODE'
+const fs = require('node:fs');
+const [modelsPath, fragmentPath, temporaryPath] = process.argv.slice(2);
+
+const isObject = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const merge = (base, overlay) => {
+  const result = isObject(base) ? { ...base } : {};
+  for (const [key, value] of Object.entries(overlay)) {
+    result[key] = isObject(value) ? merge(result[key], value) : value;
+  }
+  return result;
+};
+
+let models = {};
+if (fs.existsSync(modelsPath)) models = JSON.parse(fs.readFileSync(modelsPath, 'utf8'));
+const fragment = JSON.parse(fs.readFileSync(fragmentPath, 'utf8'));
+fs.writeFileSync(temporaryPath, `${JSON.stringify(merge(models, fragment), null, 2)}\n`, {
+  mode: 0o600,
+});
+NODE
+mv "$temporary_models" "$models_path"
+chmod 0600 "$models_path"
+printf 'merge   %s\n' "$models_path"
+
 printf '\nPi is calibrated with repository-owned tools and reasoning skills only.\n'
-printf 'Authentication, sessions, models, and domain skills remain machine-local.\n'
+printf 'Authentication, sessions, custom models, and domain skills remain machine-local.\n'
