@@ -13,6 +13,11 @@ export function normalizeTask(value) {
   return task;
 }
 
+export function cliMessageArg(task) {
+  // Pi treats leading "-" as an option and leading "@" as a file argument.
+  // A harmless leading space keeps arbitrary user text in the message channel.
+  return ` ${normalizeTask(task)}`;
+}
 export function sideSessionName(task, limit = 72) {
   const compact = normalizeTask(task).replace(/\s+/g, " ");
   const suffix = compact.length > limit ? `${compact.slice(0, limit - 1).trimEnd()}…` : compact;
@@ -46,7 +51,6 @@ export function findLatestCompletedAssistantEntryId(branch) {
   }
   return undefined;
 }
-
 export function findSideMetadata(branch) {
   for (let index = branch.length - 1; index >= 0; index -= 1) {
     const entry = branch[index];
@@ -88,15 +92,38 @@ export function buildBoundary(metadata) {
   ].join("\n");
 }
 
-export function buildLaunchCommand(piCommand, sessionFile, task) {
-  return `${shellQuote(piCommand)} --session ${shellQuote(sessionFile)} ${shellQuote(normalizeTask(task))}`;
+export function buildLaunchCommand(piCommand, sessionFile, task, piArgs = []) {
+  return [piCommand, ...piArgs, "--session", sessionFile, cliMessageArg(task)]
+    .map(shellQuote)
+    .join(" ");
 }
 
 export function isInsideZellij(environment) {
   return typeof environment?.ZELLIJ === "string" && environment.ZELLIJ.trim().length > 0;
 }
 
-export function buildZellijPaneArgs(cwd, sessionFile, task) {
+export function buildZellijPaneArgs(cwd, sessionFile, task, launch = {}) {
+  const piCommand = launch.piCommand ?? "pi";
+  const piArgs = launch.piArgs ?? [];
+  const childCommand = launch.launcherPath
+    ? [
+        launch.nodeCommand,
+        launch.launcherPath,
+        piCommand,
+        ...piArgs,
+        "--session",
+        sessionFile,
+        cliMessageArg(task),
+      ]
+    : [
+        "env",
+        "PI_SIDE_TASK_FLOAT=1",
+        piCommand,
+        ...piArgs,
+        "--session",
+        sessionFile,
+        cliMessageArg(task),
+  ];
   return [
     "action",
     "new-pane",
@@ -111,12 +138,7 @@ export function buildZellijPaneArgs(cwd, sessionFile, task) {
     cwd,
     "--close-on-exit",
     "--",
-    "env",
-    "PI_SIDE_TASK_FLOAT=1",
-    "pi",
-    "--session",
-    sessionFile,
-    normalizeTask(task),
+    ...childCommand,
   ];
 }
 

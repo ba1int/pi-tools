@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   SIDE_TASK_TYPE,
   buildBoundary,
   buildLaunchCommand,
   buildZellijPaneArgs,
+  cliMessageArg,
   findLatestCompletedAssistantEntryId,
   findSideMetadata,
   isCompletedBranch,
@@ -36,9 +39,16 @@ test("tasks are normalized and blank tasks are rejected", () => {
 
 test("launch commands quote paths and task text for a POSIX shell", () => {
   assert.equal(shellQuote("it's here"), "'it'\\''s here'");
+  assert.equal(cliMessageArg("- bullet question"), " - bullet question");
+  assert.equal(cliMessageArg("--help"), " --help");
+  assert.equal(cliMessageArg("@notes.md"), " @notes.md");
   assert.equal(
     buildLaunchCommand("pi", "/tmp/side task.jsonl", "what's next?"),
-    "'pi' --session '/tmp/side task.jsonl' 'what'\\''s next?'",
+    "'pi' '--session' '/tmp/side task.jsonl' ' what'\\''s next?'",
+  );
+  assert.equal(
+    buildLaunchCommand("/node bin", "/tmp/side task.jsonl", "check", ["/pi cli.js"]),
+    "'/node bin' '/pi cli.js' '--session' '/tmp/side task.jsonl' ' check'",
   );
 });
 
@@ -70,9 +80,39 @@ test("Zellij opens the side session in a closing 85 percent floating pane", () =
       "pi",
       "--session",
       "/tmp/side session.jsonl",
-      "check this",
+      " check this",
     ],
   );
+
+  assert.deepEqual(
+    buildZellijPaneArgs("/work", "/tmp/side.jsonl", "check", {
+      nodeCommand: "/node",
+      launcherPath: "/side/launcher.js",
+      piCommand: "/node",
+      piArgs: ["/pi/cli.js"],
+    }).slice(-8),
+    [
+      "--",
+      "/node",
+      "/side/launcher.js",
+      "/node",
+      "/pi/cli.js",
+      "--session",
+      "/tmp/side.jsonl",
+      " check",
+    ],
+  );
+});
+
+test("the floating launcher reports child startup failures", () => {
+  const launcher = fileURLToPath(
+    new URL("../extensions/side-task/launcher.js", import.meta.url),
+  );
+  const result = spawnSync(process.execPath, [launcher, "/definitely/missing/pi"], {
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 127);
+  assert.match(result.stderr, /Side conversation failed to start/);
 });
 
 test("floating side panes are distinguished from ordinary Zellij panes", () => {
@@ -150,7 +190,6 @@ test("an aside snapshots the latest completed response while a newer turn is act
     undefined,
   );
 });
-
 test("valid side metadata is recovered from the active branch", () => {
   const entry = { type: "custom", customType: SIDE_TASK_TYPE, data: metadata };
   assert.deepEqual(findSideMetadata([{ type: "message" }, entry, { type: "message" }]), metadata);

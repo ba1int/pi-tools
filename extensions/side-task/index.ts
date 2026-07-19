@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -32,6 +33,15 @@ type SideMetadata = {
   createdAt: string;
 };
 
+const sideLauncherPath = fileURLToPath(new URL("./launcher.js", import.meta.url));
+
+function currentPiInvocation(): { command: string; args: string[] } {
+  const cliPath = process.argv[1];
+  if (cliPath && existsSync(process.execPath) && existsSync(cliPath)) {
+    return { command: process.execPath, args: [cliPath] };
+  }
+  return { command: "pi", args: [] };
+}
 function currentMetadata(ctx: ExtensionContext): SideMetadata | undefined {
   return findSideMetadata(ctx.sessionManager.getBranch()) as SideMetadata | undefined;
 }
@@ -87,12 +97,23 @@ async function createSideTask(
     );
     sideManager.appendSessionInfo(sideSessionName(task));
 
-    const launchCommand = buildLaunchCommand("pi", childSessionFile, task);
+    const piInvocation = currentPiInvocation();
+    const launchCommand = buildLaunchCommand(
+      piInvocation.command,
+      childSessionFile,
+      task,
+      piInvocation.args,
+    );
     if (isInsideZellij(process.env)) {
       try {
         const result = await pi.exec(
           "zellij",
-          buildZellijPaneArgs(ctx.cwd, childSessionFile, task),
+          buildZellijPaneArgs(ctx.cwd, childSessionFile, task, {
+            nodeCommand: process.execPath,
+            launcherPath: sideLauncherPath,
+            piCommand: piInvocation.command,
+            piArgs: piInvocation.args,
+          }),
           { cwd: ctx.cwd, timeout: 10_000 },
         );
         if (result.code !== 0) {
