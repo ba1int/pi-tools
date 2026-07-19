@@ -6,9 +6,17 @@ function createHarness() {
   const handlers = new Map();
   const commands = new Map();
   const selections = [];
+  const modelSelections = [];
   const statuses = [];
   const notifications = [];
+  const followUps = [];
   let thinkingLevel = "high";
+  let currentModel = { provider: "openai-codex", id: "gpt-5.6-sol" };
+
+  const models = new Map([
+    ["openai-codex/gpt-5.6-luna", { provider: "openai-codex", id: "gpt-5.6-luna" }],
+    ["openai-codex/gpt-5.6-sol", { provider: "openai-codex", id: "gpt-5.6-sol" }],
+  ]);
 
   const pi = {
     on(name, handler) {
@@ -19,6 +27,15 @@ function createHarness() {
     },
     getThinkingLevel() {
       return thinkingLevel;
+    },
+    async setModel(model) {
+      const previousModel = currentModel;
+      currentModel = model;
+      modelSelections.push(model.id);
+      await handlers.get("model_select")?.({
+        type: "model_select", model, previousModel, source: "set",
+      }, ctx);
+      return true;
     },
     setThinkingLevel(level) {
       thinkingLevel = level;
@@ -35,6 +52,18 @@ function createHarness() {
         notifications.push({ message, level });
       },
     },
+    modelRegistry: {
+      find(provider, model) {
+        return models.get(`${provider}/${model}`);
+      },
+    },
+    get model() {
+      return currentModel;
+    },
+  };
+
+  pi.sendUserMessage = (message, options) => {
+    followUps.push({ message, options });
   };
 
   thinkingRouter(pi);
@@ -43,9 +72,12 @@ function createHarness() {
     ctx,
     handlers,
     notifications,
+    followUps,
+    modelSelections,
     selections,
     statuses,
     thinkingLevel: () => thinkingLevel,
+    model: () => currentModel,
   };
 }
 
@@ -61,16 +93,18 @@ test("runtime input events switch the actual Pi thinking level", async () => {
     source: "interactive",
     text: "Onboard this host into monitoring.",
   }, harness.ctx);
-  assert.equal(harness.thinkingLevel(), "low");
-  assert.match(harness.statuses.at(-1), /^auto low · bounded routine operation$/);
-  await selectEvent(harness, "low");
+  assert.equal(harness.model().id, "gpt-5.6-luna");
+  assert.equal(harness.thinkingLevel(), "medium");
+  assert.match(harness.statuses.at(-1), /^auto routine\/medium · bounded routine operation$/);
+  await selectEvent(harness, "medium");
 
   await harness.handlers.get("input")({
     source: "interactive",
     text: "Investigate this critical alert and find the root cause.",
   }, harness.ctx);
   assert.equal(harness.thinkingLevel(), "high");
-  assert.match(harness.statuses.at(-1), /^auto high · investigation or runbook engineering$/);
+  assert.equal(harness.model().id, "gpt-5.6-sol");
+  assert.match(harness.statuses.at(-1), /^auto frontier\/high · investigation or runbook engineering$/);
 });
 
 test("runtime manual override remains sticky until auto is restored", async () => {
@@ -83,18 +117,19 @@ test("runtime manual override remains sticky until auto is restored", async () =
     text: "Onboard this host into monitoring.",
   }, harness.ctx);
   assert.equal(harness.thinkingLevel(), "high");
-  assert.match(harness.statuses.at(-1), /^manual high · manual override$/);
+  assert.match(harness.statuses.at(-1), /^manual frontier\/high · manual override$/);
 
   await harness.commands.get("think").handler("auto", harness.ctx);
   await harness.handlers.get("input")({
     source: "interactive",
     text: "Onboard this host into monitoring.",
   }, harness.ctx);
-  assert.equal(harness.thinkingLevel(), "low");
-  assert.match(harness.statuses.at(-1), /^auto low · bounded routine operation$/);
+  assert.equal(harness.thinkingLevel(), "medium");
+  assert.equal(harness.model().id, "gpt-5.6-luna");
+  assert.match(harness.statuses.at(-1), /^auto routine\/medium · bounded routine operation$/);
 });
 
-test("runtime tool events escalate transport and post-mutation failures", async () => {
+test("runtime tool events escalate post-mutation failures", async () => {
   const harness = createHarness();
   await harness.handlers.get("session_start")({}, harness.ctx);
 
@@ -102,7 +137,7 @@ test("runtime tool events escalate transport and post-mutation failures", async 
     source: "interactive",
     text: "Onboard this host into monitoring.",
   }, harness.ctx);
-  await selectEvent(harness, "low");
+  await selectEvent(harness, "medium");
   await harness.handlers.get("tool_call")({
     toolName: "ssh_exec",
     input: { command: "docker restart middleware" },
@@ -113,19 +148,76 @@ test("runtime tool events escalate transport and post-mutation failures", async 
     details: { exitCode: 1, timedOut: false, transportError: false },
   }, harness.ctx);
   assert.equal(harness.thinkingLevel(), "high");
-  assert.match(harness.statuses.at(-1), /^auto high · failed checkpoint after mutation$/);
+  assert.equal(harness.model().id, "gpt-5.6-sol");
+  assert.match(harness.statuses.at(-1), /^auto frontier\/high · failed checkpoint after mutation$/);
 
-  await selectEvent(harness, "high");
+});
+
+test("runtime defers a preflight transport failure to semantic final-result routing", async () => {
+  const harness = createHarness();
+  await harness.handlers.get("session_start")({}, harness.ctx);
   await harness.handlers.get("input")({
     source: "interactive",
     text: "Onboard this host into monitoring.",
   }, harness.ctx);
-  await selectEvent(harness, "low");
   await harness.handlers.get("tool_result")({
     toolName: "ssh_exec",
     isError: false,
     details: { exitCode: 255, timedOut: false, transportError: true },
   }, harness.ctx);
+  assert.equal(harness.thinkingLevel(), "medium");
+  assert.equal(harness.model().id, "gpt-5.6-luna");
+
+  await harness.handlers.get("agent_end")({
+    messages: [{
+      role: "assistant",
+      content: [{ type: "text", text: "Unable to reach the assigned relay, so no changes were made." }],
+    }],
+  }, harness.ctx);
+  await harness.handlers.get("agent_settled")({}, harness.ctx);
   assert.equal(harness.thinkingLevel(), "high");
-  assert.match(harness.statuses.at(-1), /^auto high · SSH transport failure$/);
+  assert.equal(harness.model().id, "gpt-5.6-sol");
+  assert.equal(harness.followUps.length, 1);
+});
+
+test("runtime retries an unexpected Luna stop once with Sol", async () => {
+  const harness = createHarness();
+  await harness.handlers.get("session_start")({}, harness.ctx);
+  await harness.handlers.get("input")({
+    source: "interactive",
+    text: "Wire this host into monitoring according to its assignment.",
+  }, harness.ctx);
+  assert.equal(harness.model().id, "gpt-5.6-luna");
+
+  await harness.handlers.get("agent_end")({
+    messages: [{
+      role: "assistant",
+      content: [{ type: "text", text: "Blocked because the ticket conflicts with live assignment data. No changes made." }],
+    }],
+  }, harness.ctx);
+  await harness.handlers.get("agent_settled")({}, harness.ctx);
+
+  assert.equal(harness.model().id, "gpt-5.6-sol");
+  assert.equal(harness.followUps.length, 1);
+  assert.match(harness.followUps[0].message, /Automatic escalation/);
+  assert.equal(harness.followUps[0].options.deliverAs, "followUp");
+});
+
+test("runtime preserves legitimate Luna safety stops", async () => {
+  const harness = createHarness();
+  await harness.handlers.get("session_start")({}, harness.ctx);
+  await harness.handlers.get("input")({
+    source: "interactive",
+    text: "Wire this host into monitoring according to its assignment.",
+  }, harness.ctx);
+  await harness.handlers.get("agent_end")({
+    messages: [{
+      role: "assistant",
+      content: [{ type: "text", text: "Blocked: dual-relay topology is not covered by the runbook. Escalate to network-platform." }],
+    }],
+  }, harness.ctx);
+  await harness.handlers.get("agent_settled")({}, harness.ctx);
+
+  assert.equal(harness.model().id, "gpt-5.6-luna");
+  assert.equal(harness.followUps.length, 0);
 });
