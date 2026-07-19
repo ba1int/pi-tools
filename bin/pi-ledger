@@ -16,17 +16,19 @@ const args = process.argv.slice(2);
 let once = false;
 let color = process.stdout.isTTY;
 let path = null;
+let embedded = false;
 
 for (let index = 0; index < args.length; index += 1) {
   const argument = args[index];
   if (argument === "--once") once = true;
   else if (argument === "--plain") color = false;
+  else if (argument === "--embedded") embedded = true;
   else if (argument === "--path") {
     index += 1;
     if (!args[index]) throw new Error("--path requires a value");
     path = args[index];
   } else if (argument === "-h" || argument === "--help") {
-    process.stdout.write("Usage: pi-ledger [--once] [--plain] [--path FILE]\n");
+    process.stdout.write("Usage: pi-ledger [--once] [--plain] [--embedded] [--path FILE]\n");
     process.exit(0);
   } else {
     throw new Error(`unknown argument: ${argument}`);
@@ -60,6 +62,7 @@ function frame() {
     width: process.stdout.columns || 96,
     height: process.stdout.rows || 30,
     color,
+    showTitle: !embedded,
   };
   if (state.view === "board") {
     return renderAgentBoard(state.records, { ...options, selectedKey });

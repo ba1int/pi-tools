@@ -125,6 +125,39 @@ test("plain renderer produces a Protocol Ink record without ANSI escapes", () =>
   assert.doesNotMatch(output, /\x1b/);
 });
 
+test("embedded renderer leaves the title to its Zellij pane frame", () => {
+  const empty = renderLedger(null, {
+    width: 80,
+    height: 22,
+    color: false,
+    showTitle: false,
+  });
+  assert.doesNotMatch(empty, /PI \/ TASK LEDGER/);
+  assert.match(empty, /NO ACTIVE RECORD/);
+
+  const now = Date.now();
+  const records = [{
+    key: "pane-terminal_1",
+    displayState: "running",
+    snapshot: recordFixture({
+      paneId: "terminal_1",
+      processId: process.pid,
+      state: "running",
+      prompt: "Inspect Icinga alert.",
+      updatedAt: now,
+    }),
+  }];
+  const board = renderAgentBoard(records, {
+    width: 80,
+    height: 22,
+    color: false,
+    now,
+    showTitle: false,
+  });
+  assert.doesNotMatch(board, /PI \/ AGENT BOARD/);
+  assert.match(board, /1 ACTIVE/);
+});
+
 function recordFixture({ paneId, processId, state, prompt, updatedAt, finishedAt = null }) {
   const snapshot = createLedgerSnapshot({
     sessionId: `session-${paneId}`,
@@ -285,6 +318,31 @@ test("pi-ledger CLI renders a saved snapshot once", () => {
     );
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /PI \/ TASK LEDGER/);
+    assert.match(result.stdout, /SESSION\s+ops/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("pi-ledger embedded mode omits its internal title", () => {
+  const directory = mkdtempSync(join(tmpdir(), "pi-ledger-embedded-cli-"));
+  try {
+    const path = join(directory, "current.json");
+    const snapshot = createLedgerSnapshot({
+      sessionId: "session-cli",
+      sessionName: "ops",
+      cwd: "/work",
+      model: { id: "gpt-5.6-sol" },
+      thinking: "high",
+    });
+    writeFileSync(path, JSON.stringify(snapshot));
+    const result = spawnSync(
+      process.execPath,
+      [new URL("../bin/pi-ledger", import.meta.url).pathname, "--once", "--plain", "--embedded", "--path", path],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /PI \/ TASK LEDGER/);
     assert.match(result.stdout, /SESSION\s+ops/);
   } finally {
     rmSync(directory, { recursive: true, force: true });

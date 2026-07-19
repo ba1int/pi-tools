@@ -348,6 +348,7 @@ export function renderAgentBoard(records, {
   color = true,
   now = Date.now(),
   selectedKey = null,
+  showTitle = true,
 } = {}) {
   const columns = Math.max(58, Math.min(180, Math.floor(width || 96)));
   const rows = Math.max(16, Math.floor(height || 30));
@@ -364,9 +365,10 @@ export function renderAgentBoard(records, {
     .join(paint(" · ", ANSI.muted, color));
   const lines = [];
 
+  const boardTitle = showTitle ? "PI / AGENT BOARD" : "";
   lines.push(
-    paint("PI / AGENT BOARD", ANSI.bold + ANSI.ink, color)
-      + " ".repeat(Math.max(1, columns - 16 - summary.length))
+    paint(boardTitle, ANSI.bold + ANSI.ink, color)
+      + " ".repeat(Math.max(1, columns - boardTitle.length - summary.length))
       + paintedSummary,
   );
   lines.push(paint(rule, ANSI.rule, color));
@@ -437,6 +439,7 @@ export function renderLedger(snapshot, {
   color = true,
   now = Date.now(),
   footer = "q close · live event feed · local only · zero extra model tokens",
+  showTitle = true,
 } = {}) {
   const columns = Math.max(58, Math.min(160, Math.floor(width || 96)));
   const rows = Math.max(16, Math.floor(height || 30));
@@ -444,8 +447,10 @@ export function renderLedger(snapshot, {
   const lines = [];
 
   if (!snapshot || snapshot.schemaVersion !== LEDGER_SCHEMA_VERSION) {
-    lines.push(paint(pad("PI / TASK LEDGER", columns), ANSI.bold + ANSI.ink, color));
-    lines.push(paint(rule, ANSI.rule, color));
+    if (showTitle) {
+      lines.push(paint(pad("PI / TASK LEDGER", columns), ANSI.bold + ANSI.ink, color));
+      lines.push(paint(rule, ANSI.rule, color));
+    }
     lines.push("");
     lines.push(paint("NO ACTIVE RECORD", ANSI.bold + ANSI.muted, color));
     lines.push(paint("Start Pi and submit a task in this Zellij session.", ANSI.muted, color));
@@ -460,9 +465,10 @@ export function renderLedger(snapshot, {
     ? elapsedLabel((snapshot.finishedAt || now) - snapshot.startedAt)
     : "—";
   const headerRight = `${state}  ${elapsed}`;
+  const ledgerTitle = showTitle ? "PI / TASK LEDGER" : "";
   lines.push(
-    paint("PI / TASK LEDGER", ANSI.bold + ANSI.ink, color)
-      + " ".repeat(Math.max(1, columns - 16 - headerRight.length))
+    paint(ledgerTitle, ANSI.bold + ANSI.ink, color)
+      + " ".repeat(Math.max(1, columns - ledgerTitle.length - headerRight.length))
       + paint(headerRight, ANSI.bold + statusStyle(String(snapshot.state)), color),
   );
   lines.push(paint(rule, ANSI.rule, color));
