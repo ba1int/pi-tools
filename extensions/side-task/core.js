@@ -13,6 +13,12 @@ export function normalizeTask(value) {
   return task;
 }
 
+export function cliMessageArg(task) {
+  // Pi treats leading "-" as an option and leading "@" as a file argument.
+  // A harmless leading space keeps arbitrary user text in the message channel.
+  return ` ${normalizeTask(task)}`;
+}
+
 export function sideSessionName(task, limit = 72) {
   const compact = normalizeTask(task).replace(/\s+/g, " ");
   const suffix = compact.length > limit ? `${compact.slice(0, limit - 1).trimEnd()}…` : compact;
@@ -73,7 +79,7 @@ export function buildBoundary(metadata) {
 }
 
 export function buildLaunchCommand(piCommand, sessionFile, task, piArgs = []) {
-  return [piCommand, ...piArgs, "--session", sessionFile, normalizeTask(task)]
+  return [piCommand, ...piArgs, "--session", sessionFile, cliMessageArg(task)]
     .map(shellQuote)
     .join(" ");
 }
@@ -93,7 +99,7 @@ export function buildZellijPaneArgs(cwd, sessionFile, task, launch = {}) {
         ...piArgs,
         "--session",
         sessionFile,
-        normalizeTask(task),
+        cliMessageArg(task),
       ]
     : [
         "env",
@@ -102,7 +108,7 @@ export function buildZellijPaneArgs(cwd, sessionFile, task, launch = {}) {
         ...piArgs,
         "--session",
         sessionFile,
-        normalizeTask(task),
+        cliMessageArg(task),
       ];
   return [
     "action",

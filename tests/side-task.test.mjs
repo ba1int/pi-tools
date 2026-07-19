@@ -8,6 +8,7 @@ import {
   buildBoundary,
   buildLaunchCommand,
   buildZellijPaneArgs,
+  cliMessageArg,
   findSideMetadata,
   isCompletedBranch,
   isFloatingSidePane,
@@ -37,13 +38,16 @@ test("tasks are normalized and blank tasks are rejected", () => {
 
 test("launch commands quote paths and task text for a POSIX shell", () => {
   assert.equal(shellQuote("it's here"), "'it'\\''s here'");
+  assert.equal(cliMessageArg("- bullet question"), " - bullet question");
+  assert.equal(cliMessageArg("--help"), " --help");
+  assert.equal(cliMessageArg("@notes.md"), " @notes.md");
   assert.equal(
     buildLaunchCommand("pi", "/tmp/side task.jsonl", "what's next?"),
-    "'pi' '--session' '/tmp/side task.jsonl' 'what'\\''s next?'",
+    "'pi' '--session' '/tmp/side task.jsonl' ' what'\\''s next?'",
   );
   assert.equal(
     buildLaunchCommand("/node bin", "/tmp/side task.jsonl", "check", ["/pi cli.js"]),
-    "'/node bin' '/pi cli.js' '--session' '/tmp/side task.jsonl' 'check'",
+    "'/node bin' '/pi cli.js' '--session' '/tmp/side task.jsonl' ' check'",
   );
 });
 
@@ -75,7 +79,7 @@ test("Zellij opens the side session in a closing 85 percent floating pane", () =
       "pi",
       "--session",
       "/tmp/side session.jsonl",
-      "check this",
+      " check this",
     ],
   );
 
@@ -94,7 +98,7 @@ test("Zellij opens the side session in a closing 85 percent floating pane", () =
       "/pi/cli.js",
       "--session",
       "/tmp/side.jsonl",
-      "check",
+      " check",
     ],
   );
 });
