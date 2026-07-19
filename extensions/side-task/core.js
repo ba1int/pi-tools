@@ -72,15 +72,38 @@ export function buildBoundary(metadata) {
   ].join("\n");
 }
 
-export function buildLaunchCommand(piCommand, sessionFile, task) {
-  return `${shellQuote(piCommand)} --session ${shellQuote(sessionFile)} ${shellQuote(normalizeTask(task))}`;
+export function buildLaunchCommand(piCommand, sessionFile, task, piArgs = []) {
+  return [piCommand, ...piArgs, "--session", sessionFile, normalizeTask(task)]
+    .map(shellQuote)
+    .join(" ");
 }
 
 export function isInsideZellij(environment) {
   return typeof environment?.ZELLIJ === "string" && environment.ZELLIJ.trim().length > 0;
 }
 
-export function buildZellijPaneArgs(cwd, sessionFile, task) {
+export function buildZellijPaneArgs(cwd, sessionFile, task, launch = {}) {
+  const piCommand = launch.piCommand ?? "pi";
+  const piArgs = launch.piArgs ?? [];
+  const childCommand = launch.launcherPath
+    ? [
+        launch.nodeCommand,
+        launch.launcherPath,
+        piCommand,
+        ...piArgs,
+        "--session",
+        sessionFile,
+        normalizeTask(task),
+      ]
+    : [
+        "env",
+        "PI_SIDE_TASK_FLOAT=1",
+        piCommand,
+        ...piArgs,
+        "--session",
+        sessionFile,
+        normalizeTask(task),
+      ];
   return [
     "action",
     "new-pane",
@@ -95,12 +118,7 @@ export function buildZellijPaneArgs(cwd, sessionFile, task) {
     cwd,
     "--close-on-exit",
     "--",
-    "env",
-    "PI_SIDE_TASK_FLOAT=1",
-    "pi",
-    "--session",
-    sessionFile,
-    normalizeTask(task),
+    ...childCommand,
   ];
 }
 
