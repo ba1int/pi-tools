@@ -53,12 +53,27 @@ export function classifyPrompt(text, previousLevel = "high") {
     return { level: previousLevel, reason: "continuation", retained: true };
   }
   if (HIGH_SIGNALS.some((pattern) => pattern.test(prompt))) {
-    return { level: "high", reason: "investigation or runbook engineering", retained: false };
+    return { tier: "frontier", level: "high", reason: "investigation or runbook engineering", retained: false };
   }
   if (ROUTINE_SIGNALS.some((pattern) => pattern.test(prompt))) {
-    return { level: "low", reason: "bounded routine operation", retained: false };
+    return { tier: "routine", level: "medium", reason: "bounded routine operation", retained: false };
   }
-  return { level: "high", reason: "conservative default", retained: false };
+  return { tier: "frontier", level: "high", reason: "conservative default", retained: false };
+}
+
+const BLOCKED_RESULT = /\b(?:blocked|cannot|can't|could not|unable|stopped|did not proceed|no changes)\b/i;
+const LEGITIMATE_STOP = [
+  /\b(?:ownership conflict|belongs to (?:another|a different)|owned by (?:another|a different))\b/i,
+  /\b(?:dual[- ]relay|active[- ]active|unsupported topology|not covered by (?:the )?runbook|outside (?:the )?runbook)\b/i,
+  /\b(?:network-platform|network platform|change authority|owning team|missing authority|requires? approval)\b/i,
+  /\b(?:certificate trust|fingerprint mismatch|trust failure)\b/i,
+  /\bno changes (?:were )?(?:needed|required|necessary)\b|\balready (?:configured|correct|compliant|in desired state)\b/i,
+];
+
+export function finalResultRequiresEscalation(text) {
+  const report = String(text ?? "");
+  return BLOCKED_RESULT.test(report)
+    && !LEGITIMATE_STOP.some((pattern) => pattern.test(report));
 }
 
 export function looksMutatingRemoteCommand(command) {
@@ -68,7 +83,8 @@ export function looksMutatingRemoteCommand(command) {
 }
 
 export function toolFailureRequiresEscalation(result, mutationSeen) {
-  if (result?.isError === true || result?.timedOut === true || result?.transportError === true) return true;
+  if (result?.isError === true) return true;
+  if (result?.timedOut === true || result?.transportError === true) return mutationSeen === true;
   return mutationSeen === true
     && Number.isInteger(result?.exitCode)
     && result.exitCode !== 0;
@@ -81,25 +97,29 @@ export class RoutingState {
 
   reset() {
     this.mode = "auto";
+    this.tier = "frontier";
     this.level = "high";
     this.reason = "conservative default";
     this.mutationSeen = false;
+    this.escalations = 0;
   }
 
   route(text) {
     this.mutationSeen = false;
     if (this.mode === "manual") {
-      return { level: this.level, reason: "manual override", changed: false };
+      return { tier: this.tier, level: this.level, reason: "manual override", changed: false };
     }
     const decision = classifyPrompt(text, this.level);
-    const changed = decision.level !== this.level;
+    const changed = decision.level !== this.level || decision.tier !== this.tier;
+    this.tier = decision.tier ?? this.tier;
     this.level = decision.level;
     this.reason = decision.reason;
     return { ...decision, changed };
   }
 
-  setManual(level) {
+  setManual(tier, level) {
     this.mode = "manual";
+    this.tier = tier;
     this.level = level;
     this.reason = "manual override";
   }
@@ -118,10 +138,24 @@ export class RoutingState {
       return null;
     }
     const changed = this.level !== "high";
+    this.tier = "frontier";
     this.level = "high";
     this.reason = result?.isError === true || result?.timedOut === true || result?.transportError === true
       ? "SSH transport failure"
       : "failed checkpoint after mutation";
-    return { level: "high", reason: this.reason, changed };
+    this.escalations += 1;
+    return { tier: "frontier", level: "high", reason: this.reason, changed };
+  }
+
+  noteFinalResult(text) {
+    if (this.mode !== "auto" || this.tier !== "routine" || this.escalations > 0
+        || !finalResultRequiresEscalation(text)) {
+      return null;
+    }
+    this.tier = "frontier";
+    this.level = "high";
+    this.reason = "unexpected bounded-worker stop";
+    this.escalations += 1;
+    return { tier: this.tier, level: this.level, reason: this.reason, changed: true };
   }
 }

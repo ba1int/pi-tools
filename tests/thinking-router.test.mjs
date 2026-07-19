@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   RoutingState,
   classifyPrompt,
+  finalResultRequiresEscalation,
   looksMutatingRemoteCommand,
   toolFailureRequiresEscalation,
 } from "../extensions/thinking-router/core.js";
@@ -14,7 +15,11 @@ test("routine runbook operations route low", () => {
     "Follow the certificate rotation runbook for api01.",
     "Restart the middleware service using the documented procedure.",
   ]) {
-    assert.equal(classifyPrompt(prompt).level, "low", prompt);
+    assert.deepEqual(
+      { tier: classifyPrompt(prompt).tier, level: classifyPrompt(prompt).level },
+      { tier: "routine", level: "medium" },
+      prompt,
+    );
   }
 });
 
@@ -25,12 +30,16 @@ test("incidents, ambiguity, and runbook engineering route high", () => {
     "Create a reusable runbook for this procedure.",
     "The deployment hit an unexpected failure; diagnose it.",
   ]) {
-    assert.equal(classifyPrompt(prompt).level, "high", prompt);
+    assert.deepEqual(
+      { tier: classifyPrompt(prompt).tier, level: classifyPrompt(prompt).level },
+      { tier: "frontier", level: "high" },
+      prompt,
+    );
   }
 });
 
 test("unknown requests default high and brief confirmations retain the prior level", () => {
-  assert.equal(classifyPrompt("Handle this ticket for me.").level, "high");
+  assert.equal(classifyPrompt("Handle this ticket for me.").tier, "frontier");
   for (const prompt of [
     "go ahead",
     "okay do it",
@@ -38,8 +47,8 @@ test("unknown requests default high and brief confirmations retain the prior lev
     "awesome, go ahead",
     "awesome yes, go ahead and do that",
   ]) {
-    assert.deepEqual(classifyPrompt(prompt, "low"), {
-      level: "low", reason: "continuation", retained: true,
+    assert.deepEqual(classifyPrompt(prompt, "medium"), {
+      level: "medium", reason: "continuation", retained: true,
     }, prompt);
   }
   assert.equal(classifyPrompt("okay, investigate the new critical alert", "low").level, "high");
@@ -73,34 +82,57 @@ test("remote mutation detection distinguishes inspections from changes", () => {
   }
 });
 
-test("failures escalate only after mutation or for transport errors", () => {
+test("failures escalate after mutation while preflight transport errors defer", () => {
   assert.equal(toolFailureRequiresEscalation({ exitCode: 1 }, false), false);
   assert.equal(toolFailureRequiresEscalation({ exitCode: 1 }, true), true);
-  assert.equal(toolFailureRequiresEscalation({ timedOut: true }, false), true);
+  assert.equal(toolFailureRequiresEscalation({ timedOut: true }, false), false);
+  assert.equal(toolFailureRequiresEscalation({ timedOut: true }, true), true);
   assert.equal(toolFailureRequiresEscalation({ isError: true }, false), true);
-  assert.equal(toolFailureRequiresEscalation({ exitCode: 255, transportError: true }, false), true);
+  assert.equal(toolFailureRequiresEscalation({ exitCode: 255, transportError: true }, false), false);
+  assert.equal(toolFailureRequiresEscalation({ exitCode: 255, transportError: true }, true), true);
   assert.equal(toolFailureRequiresEscalation({ exitCode: 255, transportError: false }, false), false);
 });
 
 test("routing state respects manual override and automatic failure escalation", () => {
   const state = new RoutingState();
-  assert.equal(state.route("Onboard this host into monitoring.").level, "low");
+  assert.equal(state.route("Onboard this host into monitoring.").tier, "routine");
   state.noteRemoteCommand("sudo tee /etc/app.conf");
-  assert.equal(state.noteRemoteResult({ exitCode: 1 }).level, "high");
+  assert.equal(state.noteRemoteResult({ exitCode: 1 }).tier, "frontier");
   assert.equal(state.level, "high");
 
-  state.setManual("low");
+  state.setManual("routine", "medium");
   state.noteRemoteCommand("sudo tee /etc/app.conf");
   assert.equal(state.noteRemoteResult({ exitCode: 1 }), null);
-  assert.equal(state.route("Investigate an outage.").level, "low");
+  assert.equal(state.route("Investigate an outage.").tier, "routine");
 
   state.setAuto();
   assert.equal(state.route("Investigate an outage.").level, "high");
 });
 
-test("transport escalation reports the actual reason", () => {
+test("unexpected bounded-worker stops escalate but hard safety blocks do not", () => {
+  assert.equal(finalResultRequiresEscalation(
+    "Blocked because the ticket differs from live assignment data. No changes made.",
+  ), true);
+  for (const report of [
+    "Blocked by an ownership conflict: the network belongs to another client.",
+    "Stopped because this dual-relay topology is not covered by the runbook.",
+    "Blocked pending network-platform change authority.",
+    "Blocked by a certificate fingerprint mismatch.",
+    "Already configured correctly; no changes were necessary.",
+  ]) {
+    assert.equal(finalResultRequiresEscalation(report), false, report);
+  }
+
   const state = new RoutingState();
-  assert.equal(state.route("Onboard this host into monitoring.").level, "low");
+  state.route("Onboard this host into monitoring.");
+  assert.equal(state.noteFinalResult("Blocked because ticket data differs from live state.").tier, "frontier");
+  assert.equal(state.noteFinalResult("Blocked again."), null, "only one automatic escalation");
+});
+
+test("post-mutation transport escalation reports the actual reason", () => {
+  const state = new RoutingState();
+  assert.equal(state.route("Onboard this host into monitoring.").level, "medium");
+  state.noteRemoteCommand("sudo tee /etc/app.conf");
   const escalation = state.noteRemoteResult({ exitCode: 255, transportError: true });
   assert.equal(escalation.reason, "SSH transport failure");
   assert.equal(state.level, "high");

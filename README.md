@@ -29,8 +29,10 @@ validation, timeouts, and approval behavior remain identical. Set
 
 Failed calls identify DNS, authentication, host-key, refusal, timeout,
 connection-loss, and ordinary remote-command exits in compact result metadata.
-Transport failures automatically promote the thinking router to `high`; an
-ordinary non-zero read-only command remains at the selected level.
+After mutation, transport failures automatically promote the router to Sol
+`high`. During preflight, Luna retains the task until the final result can
+distinguish an unexpected connection block from a legitimate topology stop.
+An ordinary non-zero read-only command remains at the selected level.
 
 Remote stdout and stderr are stripped of terminal control sequences before
 they reach Pi context or the TUI. Printable Unicode, tabs, and newlines remain
@@ -51,20 +53,27 @@ actual topology, commands, logs, configuration, and change procedure.
 
 ## Thinking Router
 
-`thinking-router` changes the current Sol reasoning level before each prompt
-without calling another model:
+`thinking-router` selects the cheapest benchmarked model before each prompt:
 
-- bounded onboarding and explicit runbook execution use `low`;
-- incidents, diagnosis, ambiguity, and runbook engineering use `high`;
-- unknown requests conservatively default to `high`;
+- bounded onboarding and explicit runbook execution use Luna `medium`;
+- incidents, diagnosis, ambiguity, and runbook engineering use Sol `high`;
+- unknown requests conservatively default to Sol `high`;
 - short confirmations retain the previous level; and
-- an SSH transport error or timeout, or a non-zero checkpoint after mutation,
-  promotes the remaining agent turn to `high`.
+- an SSH transport error, timeout, or non-zero checkpoint after mutation
+  promotes the remaining agent turn to Sol `high`.
 
-The footer status shows the selected mode, level, and reason. Shift+Tab creates
-a manual override for the current session. `/think auto` restores automatic
-routing; `/think low`, `/think high`, and `/think status` are available for
-explicit control. Set `PI_THINKING_ROUTER=off` for controlled benchmarks.
+If Luna ends a bounded task with an unexpected block, the router switches to
+Sol and performs one follow-up pass using the same session context. It does not
+retry recognized hard stops such as conflicting network ownership, unsupported
+topology, missing change authority, or certificate trust failures. The single
+retry bound prevents escalation loops.
+
+The footer status shows the selected mode, model tier, thinking level, and
+reason. Shift+Tab or manual model selection creates an override for the current
+session. `/think auto` restores automatic routing; `/think luna`, `/think sol`,
+and `/think status` are available for debugging. Set `PI_THINKING_ROUTER=off`
+for fixed-model benchmarks. Model IDs can be overridden with
+`PI_ROUTER_ROUTINE_MODEL` and `PI_ROUTER_FRONTIER_MODEL`.
 
 ## Context budget
 
