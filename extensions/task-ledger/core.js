@@ -1,8 +1,10 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
 export const LEDGER_SCHEMA_VERSION = 1;
 export const MAX_LEDGER_EVENTS = 48;
+export const FINISHED_VISIBILITY_MS = 30 * 60 * 1000;
 
 const ANSI_PATTERN = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)?)/g;
 const CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
@@ -26,11 +28,28 @@ export function sanitizeLedgerText(value, limit = 120) {
   return `${cleaned.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
 }
 
-export function resolveLedgerPath(environment = process.env, home = homedir()) {
+export function resolveLedgerDirectory(environment = process.env, home = homedir()) {
   const stateHome = environment.XDG_STATE_HOME?.trim()
     || join(home, ".local", "state");
   const session = sanitizeSegment(environment.ZELLIJ_SESSION_NAME, "terminal");
-  return join(stateHome, "pi-ledger", session, "current.json");
+  return join(stateHome, "pi-ledger", session);
+}
+
+export function resolveAgentKey(environment = process.env, processId = process.pid) {
+  const paneId = sanitizeSegment(environment.ZELLIJ_PANE_ID, "");
+  return paneId ? `pane-${paneId}` : `pid-${Math.max(1, Number(processId) || 1)}`;
+}
+
+export function resolveLedgerPath(
+  environment = process.env,
+  home = homedir(),
+  processId = process.pid,
+) {
+  return join(
+    resolveLedgerDirectory(environment, home),
+    "agents",
+    `${resolveAgentKey(environment, processId)}.json`,
+  );
 }
 
 export function modelLabel(model) {
@@ -38,11 +57,24 @@ export function modelLabel(model) {
   return sanitizeLedgerText(model.id ?? model.name ?? String(model), 48) || "unselected";
 }
 
-export function createLedgerSnapshot({ sessionId, sessionName, cwd, model, thinking, now = Date.now() }) {
+export function createLedgerSnapshot({
+  sessionId,
+  sessionName,
+  cwd,
+  model,
+  thinking,
+  paneId = process.env.ZELLIJ_PANE_ID || null,
+  processId = process.pid,
+  zellijSession = process.env.ZELLIJ_SESSION_NAME || null,
+  now = Date.now(),
+}) {
   return {
     schemaVersion: LEDGER_SCHEMA_VERSION,
     sessionId: sanitizeSegment(sessionId, "ephemeral"),
     sessionName: sanitizeLedgerText(sessionName || "unnamed", 48),
+    paneId: paneId ? sanitizeLedgerText(paneId, 32) : null,
+    processId: Number.isInteger(Number(processId)) ? Number(processId) : null,
+    zellijSession: zellijSession ? sanitizeLedgerText(zellijSession, 64) : null,
     cwd: sanitizeLedgerText(cwd, 96),
     model: modelLabel(model),
     thinking: sanitizeLedgerText(thinking || "unknown", 16),
@@ -194,6 +226,99 @@ function clockLabel(timestamp) {
   return new Date(timestamp).toISOString().slice(11, 19);
 }
 
+export function processIsAlive(processId) {
+  if (!Number.isInteger(processId) || processId <= 0) return false;
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+export function ledgerDisplayState(snapshot, isAlive = processIsAlive) {
+  const state = String(snapshot?.state || "idle").toLowerCase();
+  if (["queued", "running"].includes(state)
+      && Number.isInteger(snapshot?.processId)
+      && !isAlive(snapshot.processId)) {
+    return "stale";
+  }
+  return state;
+}
+
+export function lastLedgerEvent(snapshot) {
+  const events = Array.isArray(snapshot?.events) ? snapshot.events : [];
+  return events.at(-1) || null;
+}
+
+function stateRank(state) {
+  if (["queued", "running"].includes(state)) return 0;
+  if (state === "failed") return 1;
+  if (state === "stale") return 2;
+  if (state === "complete") return 3;
+  return 4;
+}
+
+export function sortLedgerRecords(records) {
+  return [...records].sort((left, right) => {
+    const rank = stateRank(left.displayState) - stateRank(right.displayState);
+    if (rank !== 0) return rank;
+    return Number(right.snapshot.updatedAt || 0) - Number(left.snapshot.updatedAt || 0);
+  });
+}
+
+export function loadLedgerRecords({
+  environment = process.env,
+  home = homedir(),
+  now = Date.now(),
+  retentionMs = FINISHED_VISIBILITY_MS,
+  isAlive = processIsAlive,
+} = {}) {
+  const directory = resolveLedgerDirectory(environment, home);
+  const agentsDirectory = join(directory, "agents");
+  let names = [];
+  try {
+    names = readdirSync(agentsDirectory).filter((name) => name.endsWith(".json"));
+  } catch {
+    // A session without agent records is a normal empty state.
+  }
+
+  const records = [];
+  for (const name of names) {
+    const path = join(agentsDirectory, name);
+    try {
+      const snapshot = JSON.parse(readFileSync(path, "utf8"));
+      if (snapshot?.schemaVersion !== LEDGER_SCHEMA_VERSION) continue;
+      const displayState = ledgerDisplayState(snapshot, isAlive);
+      const isActive = ["queued", "running"].includes(displayState);
+      const age = Math.max(0, now - Number(snapshot.finishedAt || snapshot.updatedAt || now));
+      if (!isActive && age > retentionMs) continue;
+      records.push({ key: name.slice(0, -5), path, snapshot, displayState });
+    } catch {
+      // One partial or corrupt record must not take down the board.
+    }
+  }
+
+  if (records.length === 0) {
+    const legacyPath = join(directory, "current.json");
+    try {
+      const snapshot = JSON.parse(readFileSync(legacyPath, "utf8"));
+      if (snapshot?.schemaVersion === LEDGER_SCHEMA_VERSION) {
+        records.push({
+          key: "legacy-current",
+          path: legacyPath,
+          snapshot,
+          displayState: ledgerDisplayState(snapshot, isAlive),
+        });
+      }
+    } catch {
+      // No legacy snapshot is also a normal empty state.
+    }
+  }
+
+  return sortLedgerRecords(records);
+}
+
 const ANSI = {
   reset: "\x1b[0m",
   bold: "\x1b[1m",
@@ -211,9 +336,99 @@ function paint(value, style, enabled) {
 }
 
 function statusStyle(status) {
-  if (["fail", "failed", "error", "aborted", "stopped"].includes(status)) return ANSI.coral;
+  if (["fail", "failed", "error", "aborted"].includes(status)) return ANSI.coral;
   if (["run", "running", "low", "high", "xhigh", "medium"].includes(status)) return ANSI.teal;
+  if (["stale", "stopped", "idle", "queued"].includes(status)) return ANSI.muted;
   return ANSI.ink;
+}
+
+export function renderAgentBoard(records, {
+  width = 96,
+  height = 30,
+  color = true,
+  now = Date.now(),
+  selectedKey = null,
+} = {}) {
+  const columns = Math.max(58, Math.min(180, Math.floor(width || 96)));
+  const rows = Math.max(16, Math.floor(height || 30));
+  const rule = "─".repeat(columns);
+  const active = records.filter((record) => ["queued", "running"].includes(record.displayState)).length;
+  const failed = records.filter((record) => record.displayState === "failed").length;
+  const stale = records.filter((record) => record.displayState === "stale").length;
+  const summaryParts = [{ text: `${active} ACTIVE`, style: active ? ANSI.teal : ANSI.ink }];
+  if (failed) summaryParts.push({ text: `${failed} FAILED`, style: ANSI.coral });
+  if (stale) summaryParts.push({ text: `${stale} STALE`, style: ANSI.muted });
+  const summary = summaryParts.map((part) => part.text).join(" · ");
+  const paintedSummary = summaryParts
+    .map((part) => paint(part.text, ANSI.bold + part.style, color))
+    .join(paint(" · ", ANSI.muted, color));
+  const lines = [];
+
+  lines.push(
+    paint("PI / AGENT BOARD", ANSI.bold + ANSI.ink, color)
+      + " ".repeat(Math.max(1, columns - 16 - summary.length))
+      + paintedSummary,
+  );
+  lines.push(paint(rule, ANSI.rule, color));
+  lines.push(paint("One record per Pi pane · current Zellij session", ANSI.muted, color));
+  lines.push("");
+
+  const fixedWidth = 2 + 4 + 10 + 7 + 7 + 5;
+  const flexible = Math.max(23, columns - fixedWidth);
+  const taskWidth = Math.max(12, Math.floor(flexible * 0.58));
+  const eventWidth = Math.max(8, flexible - taskWidth);
+  lines.push(paint(
+    `  ${pad("NO", 4)} ${pad("STATE", 10)} ${pad("TIME", 7)} ${pad("THINK", 7)} ${pad("TASK", taskWidth)} ${pad("LAST CHECKPOINT", eventWidth)}`,
+    ANSI.muted,
+    color,
+  ));
+  lines.push(paint(rule, ANSI.rule, color));
+
+  const visibleRows = Math.max(1, rows - lines.length - 3);
+  const selectedIndex = Math.max(0, records.findIndex((record) => record.key === selectedKey));
+  const startIndex = Math.min(
+    Math.max(0, selectedIndex - visibleRows + 1),
+    Math.max(0, records.length - visibleRows),
+  );
+  const visible = records.slice(startIndex, startIndex + visibleRows);
+  if (visible.length === 0) {
+    lines.push(paint("  —    IDLE       —       —       No Pi agents have reported in this session.", ANSI.muted, color));
+  } else {
+    visible.forEach((record, visibleIndex) => {
+      const index = startIndex + visibleIndex;
+      const selected = record.key === selectedKey || (!selectedKey && index === 0);
+      const marker = selected ? "›" : " ";
+      const snapshot = record.snapshot;
+      const event = lastLedgerEvent(snapshot);
+      const age = snapshot.startedAt
+        ? elapsedLabel((snapshot.finishedAt || now) - snapshot.startedAt)
+        : "—";
+      const task = snapshot.prompt || snapshot.sessionName || "Waiting for a task.";
+      const checkpoint = event
+        ? `${event.kind} ${event.detail || event.status}`
+        : "No checkpoint";
+      const row = `${marker} ${pad(String(index + 1).padStart(2, "0"), 4)} `
+        + `${pad(record.displayState.toUpperCase(), 10)} ${pad(age, 7)} `
+        + `${pad(String(snapshot.thinking || "—").toUpperCase(), 7)} `
+        + `${pad(task, taskWidth)} ${pad(checkpoint, eventWidth)}`;
+      const rowStyle = selected ? ANSI.bold + ANSI.text : ANSI.text;
+      lines.push(
+        paint(row.slice(0, 2), selected ? ANSI.teal : ANSI.text, color)
+          + paint(row.slice(2, 7), rowStyle, color)
+          + paint(row.slice(7, 18), statusStyle(record.displayState), color)
+          + paint(row.slice(18), rowStyle, color),
+      );
+    });
+  }
+
+  while (lines.length < rows - 2) lines.push("");
+  lines.push(paint(rule, ANSI.rule, color));
+  lines.push(paint(
+    clip("↑/↓ select · enter jump · d detail · q close · zero extra model tokens", columns),
+    ANSI.muted,
+    color,
+  ));
+  return lines.join("\n");
 }
 
 export function renderLedger(snapshot, {
@@ -221,6 +436,7 @@ export function renderLedger(snapshot, {
   height = 30,
   color = true,
   now = Date.now(),
+  footer = "q close · live event feed · local only · zero extra model tokens",
 } = {}) {
   const columns = Math.max(58, Math.min(160, Math.floor(width || 96)));
   const rows = Math.max(16, Math.floor(height || 30));
@@ -235,7 +451,7 @@ export function renderLedger(snapshot, {
     lines.push(paint("Start Pi and submit a task in this Zellij session.", ANSI.muted, color));
     lines.push("");
     lines.push(paint(rule, ANSI.rule, color));
-    lines.push(paint("q close · local event feed · zero extra model tokens", ANSI.muted, color));
+    lines.push(paint(clip(footer, columns), ANSI.muted, color));
     return lines.join("\n");
   }
 
@@ -294,7 +510,7 @@ export function renderLedger(snapshot, {
 
   while (lines.length < rows - 2) lines.push("");
   lines.push(paint(rule, ANSI.rule, color));
-  lines.push(paint("q close · live event feed · local only · zero extra model tokens", ANSI.muted, color));
+  lines.push(paint(clip(footer, columns), ANSI.muted, color));
   return lines.join("\n");
 }
 

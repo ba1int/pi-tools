@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -42,10 +42,12 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
   const previous = {
     XDG_STATE_HOME: process.env.XDG_STATE_HOME,
     ZELLIJ_SESSION_NAME: process.env.ZELLIJ_SESSION_NAME,
+    ZELLIJ_PANE_ID: process.env.ZELLIJ_PANE_ID,
     PI_SIDE_TASK_FLOAT: process.env.PI_SIDE_TASK_FLOAT,
   };
   process.env.XDG_STATE_HOME = stateHome;
   process.env.ZELLIJ_SESSION_NAME = "ops";
+  process.env.ZELLIJ_PANE_ID = "terminal_7";
   delete process.env.PI_SIDE_TASK_FLOAT;
 
   try {
@@ -80,7 +82,7 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
     await handlers.get("agent_settled")({}, ctx);
 
     const snapshot = JSON.parse(readFileSync(
-      join(stateHome, "pi-ledger", "ops", "current.json"),
+      join(stateHome, "pi-ledger", "ops", "agents", "pane-terminal_7.json"),
       "utf8",
     ));
     assert.equal(snapshot.state, "complete");
@@ -97,8 +99,67 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
     else process.env.XDG_STATE_HOME = previous.XDG_STATE_HOME;
     if (previous.ZELLIJ_SESSION_NAME === undefined) delete process.env.ZELLIJ_SESSION_NAME;
     else process.env.ZELLIJ_SESSION_NAME = previous.ZELLIJ_SESSION_NAME;
+    if (previous.ZELLIJ_PANE_ID === undefined) delete process.env.ZELLIJ_PANE_ID;
+    else process.env.ZELLIJ_PANE_ID = previous.ZELLIJ_PANE_ID;
     if (previous.PI_SIDE_TASK_FLOAT === undefined) delete process.env.PI_SIDE_TASK_FLOAT;
     else process.env.PI_SIDE_TASK_FLOAT = previous.PI_SIDE_TASK_FLOAT;
+    rmSync(stateHome, { recursive: true, force: true });
+  }
+});
+
+test("three concurrent pane writers retain independent task records", async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), "pi-ledger-concurrent-"));
+  const previous = {
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+    ZELLIJ_SESSION_NAME: process.env.ZELLIJ_SESSION_NAME,
+    ZELLIJ_PANE_ID: process.env.ZELLIJ_PANE_ID,
+    PI_SIDE_TASK_FLOAT: process.env.PI_SIDE_TASK_FLOAT,
+  };
+  process.env.XDG_STATE_HOME = stateHome;
+  process.env.ZELLIJ_SESSION_NAME = "dispatcher";
+  delete process.env.PI_SIDE_TASK_FLOAT;
+
+  try {
+    const agents = ["terminal_1", "terminal_2", "terminal_3"].map((paneId) => {
+      process.env.ZELLIJ_PANE_ID = paneId;
+      return { paneId, ...harness() };
+    });
+
+    await Promise.all(agents.map(async ({ paneId, handlers, ctx }) => {
+      await handlers.get("session_start")({}, ctx);
+      await handlers.get("input")({
+        source: "interactive",
+        text: `Investigate task in ${paneId}.`,
+      }, ctx);
+      await handlers.get("agent_start")({}, ctx);
+    }));
+
+    const snapshots = agents.map(({ paneId }) => {
+      const path = join(
+        stateHome,
+        "pi-ledger",
+        "dispatcher",
+        "agents",
+        `pane-${paneId}.json`,
+      );
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+      return JSON.parse(readFileSync(path, "utf8"));
+    });
+    assert.deepEqual(snapshots.map((snapshot) => snapshot.paneId), [
+      "terminal_1",
+      "terminal_2",
+      "terminal_3",
+    ]);
+    assert.deepEqual(snapshots.map((snapshot) => snapshot.prompt), [
+      "Investigate task in terminal_1.",
+      "Investigate task in terminal_2.",
+      "Investigate task in terminal_3.",
+    ]);
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
     rmSync(stateHome, { recursive: true, force: true });
   }
 });

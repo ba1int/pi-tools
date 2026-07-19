@@ -57,6 +57,8 @@ function previousOrdinal(path: string, sessionId: string) {
 export default function taskLedger(pi: ExtensionAPI) {
   if (isDisabled()) return;
 
+  const paneId = process.env.ZELLIJ_PANE_ID || null;
+  const zellijSession = process.env.ZELLIJ_SESSION_NAME || null;
   const ledgerPath = resolveLedgerPath();
   const toolRuns = new Map<string, ToolRun>();
   let snapshot: ReturnType<typeof createLedgerSnapshot> | null = null;
@@ -74,6 +76,9 @@ export default function taskLedger(pi: ExtensionAPI) {
       cwd: ctx.cwd,
       model: ctx.model,
       thinking: pi.getThinkingLevel(),
+      paneId,
+      processId: process.pid,
+      zellijSession,
     });
     snapshot.taskOrdinal = previousOrdinal(ledgerPath, snapshot.sessionId);
     lastThinking = pi.getThinkingLevel();

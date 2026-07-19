@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
-import { resolveLedgerPath, renderLedger } from "../extensions/task-ledger/core.js";
+import {
+  loadLedgerRecords,
+  renderAgentBoard,
+  renderLedger,
+} from "../extensions/task-ledger/core.js";
+import {
+  focusZellijPane,
+  moveSelection,
+  selectedRecord,
+} from "../extensions/task-ledger/viewer.js";
 
 const args = process.argv.slice(2);
 let once = false;
 let color = process.stdout.isTTY;
-let path = resolveLedgerPath();
+let path = null;
 
 for (let index = 0; index < args.length; index += 1) {
   const argument = args[index];
@@ -25,6 +34,7 @@ for (let index = 0; index < args.length; index += 1) {
 }
 
 function loadSnapshot() {
+  if (!path) return null;
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch {
@@ -32,12 +42,32 @@ function loadSnapshot() {
   }
 }
 
+let mode = path ? "detail" : "auto";
+let selectedKey = null;
+
+function viewState() {
+  if (path) return { records: [], selected: null, view: "detail", snapshot: loadSnapshot() };
+  const records = loadLedgerRecords();
+  const selected = selectedRecord(records, selectedKey);
+  if (selected) selectedKey = selected.key;
+  const view = mode === "auto" ? (records.length > 1 ? "board" : "detail") : mode;
+  return { records, selected, view, snapshot: selected?.snapshot || null };
+}
+
 function frame() {
-  return renderLedger(loadSnapshot(), {
+  const state = viewState();
+  const options = {
     width: process.stdout.columns || 96,
     height: process.stdout.rows || 30,
     color,
-  });
+  };
+  if (state.view === "board") {
+    return renderAgentBoard(state.records, { ...options, selectedKey });
+  }
+  const footer = state.records.length > 1
+    ? "b board · enter jump · q close · local only · zero extra model tokens"
+    : "q close · live event feed · local only · zero extra model tokens";
+  return renderLedger(state.snapshot, { ...options, footer });
 }
 
 if (once || !process.stdout.isTTY) {
@@ -63,7 +93,51 @@ if (process.stdin.isTTY) {
   process.stdin.resume();
   process.stdin.on("data", (chunk) => {
     const value = chunk.toString("utf8");
-    if (value === "q" || value === "\x1b" || value === "\x03" || value === "\x04") close();
+    if (value === "q" || value === "\x03" || value === "\x04") {
+      close();
+      return;
+    }
+    const state = viewState();
+    if (value === "\x1b[A" || value === "k") {
+      selectedKey = moveSelection(state.records, selectedKey, -1);
+      mode = "board";
+      previous = "";
+      draw();
+      return;
+    }
+    if (value === "\x1b[B" || value === "j") {
+      selectedKey = moveSelection(state.records, selectedKey, 1);
+      mode = "board";
+      previous = "";
+      draw();
+      return;
+    }
+    if (value === "d") {
+      if (state.selected) mode = "detail";
+      previous = "";
+      draw();
+      return;
+    }
+    if (value === "b" || value === "\x1b") {
+      if (state.records.length > 1 && state.view === "detail") {
+        mode = "board";
+        previous = "";
+        draw();
+      } else if (value === "\x1b") {
+        close();
+      }
+      return;
+    }
+    if (value === "\r" || value === "\n") {
+      if (state.selected?.snapshot?.paneId
+          && focusZellijPane(state.selected.snapshot.paneId)) {
+        close();
+      } else if (state.selected) {
+        mode = "detail";
+        previous = "";
+        draw();
+      }
+    }
   });
 }
 

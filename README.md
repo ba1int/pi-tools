@@ -114,18 +114,23 @@ cache read (`R`), write (`W`), and hit (`CH`) metrics.
 
 ## Task ledger
 
-`task-ledger` records Pi's existing lifecycle events into one bounded,
-session-scoped local snapshot. It captures the current task, selected model and
-thinking level, tool target, elapsed time, outcome, cost, and completion state.
-It never adds messages to model context, calls another model, stores raw command
-output, or records hidden reasoning. The snapshot retains at most 48 checkpoint
-rows beneath `${XDG_STATE_HOME:-~/.local/state}/pi-ledger` with user-only
-permissions.
+`task-ledger` records Pi's existing lifecycle events into one bounded local
+snapshot per Zellij pane. Each Pi process writes only its own atomic file, so
+simultaneous agents never share a writer, registry, lock, or daemon. Records
+capture the current task, selected model and thinking level, safe tool target,
+elapsed time, outcome, cost, and completion state. They never add messages to
+model context, call another model, store raw command output, or record hidden
+reasoning. Each snapshot retains at most 48 checkpoint rows beneath
+`${XDG_STATE_HOME:-~/.local/state}/pi-ledger` with user-only permissions.
 
-Run `pi-ledger` to follow the current record. The workstation dotfiles bind
-`Ctrl+o`, then `i` to open the same viewer in a single Zellij floating pane;
-press `q` to close it. Floating `/btw` side conversations do not replace the
-primary ledger. Set `PI_TASK_LEDGER=off` to disable recording.
+Run `pi-ledger` to follow the current record. With one Pi pane it opens the
+detailed ledger; with several it opens the Protocol Ink agent board. Use
+`↑`/`↓` or `j`/`k` to select an agent, `Enter` to jump to its Zellij pane, and
+`d` to inspect its checkpoints. Finished records leave the board after 30
+minutes, while a dead writer is labeled `STALE`. The workstation dotfiles bind
+`Ctrl+o`, then `i` to open the viewer in one floating pane; press `q` to close
+it. Floating `/btw` side conversations stay out of the primary board. Set
+`PI_TASK_LEDGER=off` to disable recording.
 
 ## Install
 
