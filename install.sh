@@ -65,7 +65,7 @@ set +f
 for extension_path in "$extensions_dir"/*; do
     [ -e "$extension_path" ] || [ -L "$extension_path" ] || continue
     case "$(basename -- "$extension_path")" in
-        ssh-direct|thinking-router) continue ;;
+        ssh-direct|thinking-router|side-task) continue ;;
     esac
     mkdir -p "$retired_dir"
     mv "$extension_path" "$retired_dir/"
@@ -93,6 +93,7 @@ link_path() {
 
 link_path "$repo_root/extensions/ssh-direct" "$extensions_dir/ssh-direct"
 link_path "$repo_root/extensions/thinking-router" "$extensions_dir/thinking-router"
+link_path "$repo_root/extensions/side-task" "$extensions_dir/side-task"
 link_path "$repo_root/skills/incident-investigation" \
     "$agent_dir/skills/incident-investigation"
 link_path "$repo_root/themes/protocol-ink.json" "$agent_dir/themes/protocol-ink.json"

@@ -12,6 +12,7 @@ test("package exposes the owned incident skill", async () => {
   assert.deepEqual(manifest.pi.extensions, [
     "./extensions/ssh-direct/index.ts",
     "./extensions/thinking-router/index.ts",
+    "./extensions/side-task/index.ts",
   ]);
 });
 
@@ -35,5 +36,5 @@ test("installer links the incident skill without retiring domain skills", async 
   );
   assert.doesNotMatch(installer, /for skill_path in/);
   assert.match(installer, /extensions\/thinking-router" "\$extensions_dir\/thinking-router"/);
-  assert.match(installer, /ssh-direct\|thinking-router\) continue/);
+  assert.match(installer, /ssh-direct\|thinking-router\|side-task\) continue/);
 });
