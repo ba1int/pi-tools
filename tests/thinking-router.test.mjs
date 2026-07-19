@@ -31,15 +31,46 @@ test("incidents, ambiguity, and runbook engineering route high", () => {
 
 test("unknown requests default high and brief confirmations retain the prior level", () => {
   assert.equal(classifyPrompt("Handle this ticket for me.").level, "high");
-  assert.deepEqual(classifyPrompt("go ahead", "low"), {
-    level: "low", reason: "continuation", retained: true,
-  });
+  for (const prompt of [
+    "go ahead",
+    "okay do it",
+    "yes please",
+    "awesome, go ahead",
+    "awesome yes, go ahead and do that",
+  ]) {
+    assert.deepEqual(classifyPrompt(prompt, "low"), {
+      level: "low", reason: "continuation", retained: true,
+    }, prompt);
+  }
+  assert.equal(classifyPrompt("okay, investigate the new critical alert", "low").level, "high");
 });
 
 test("remote mutation detection distinguishes inspections from changes", () => {
   assert.equal(looksMutatingRemoteCommand("hostname; cat /etc/app.conf"), false);
   assert.equal(looksMutatingRemoteCommand("sudo install -m 0644 /tmp/x /etc/app.conf"), true);
   assert.equal(looksMutatingRemoteCommand("printf ok | sudo tee /etc/app.conf"), true);
+  for (const command of [
+    "apt-get install -y nginx",
+    "sudo dnf upgrade middleware",
+    "docker restart middleware",
+    "docker compose up -d",
+    "kubectl apply -f deployment.yaml",
+    "helm upgrade middleware ./chart",
+    "systemctl daemon-reload",
+    "sudo usermod -aG operators appuser",
+    "sudo nft add rule inet filter input tcp dport 5665 accept",
+  ]) {
+    assert.equal(looksMutatingRemoteCommand(command), true, command);
+  }
+  for (const command of [
+    "apt-cache policy nginx",
+    "docker inspect middleware",
+    "kubectl get pods",
+    "systemctl status middleware",
+    "nft list ruleset",
+  ]) {
+    assert.equal(looksMutatingRemoteCommand(command), false, command);
+  }
 });
 
 test("failures escalate only after mutation or for transport errors", () => {
