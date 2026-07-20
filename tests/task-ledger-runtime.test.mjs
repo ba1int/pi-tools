@@ -135,7 +135,12 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
         stopReason: "stop",
       },
     }, ctx);
-    testHarness.emit("pi-tools:context-checkpoint", { pending: true });
+    testHarness.emit("pi-tools:context-checkpoint", {
+      pending: true,
+      status: "running",
+      reason: "threshold",
+      count: 0,
+    });
     await handlers.get("agent_settled")({}, ctx);
 
     const snapshotPath = join(stateHome, "pi-ledger", "ops", "agents", "pane-terminal_7.json");
@@ -146,7 +151,12 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
       true,
     );
 
-    testHarness.emit("pi-tools:context-checkpoint", { pending: false });
+    testHarness.emit("pi-tools:context-checkpoint", {
+      pending: false,
+      status: "ok",
+      reason: "threshold",
+      count: 1,
+    });
     await handlers.get("agent_settled")({}, ctx);
 
     const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8"));
@@ -164,6 +174,8 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
       note: "Middleware health validated",
     }]);
     assert.equal(snapshot.events.some((event) => event.detail === "ops checkpoint"), false);
+    assert.equal(snapshot.events.find((event) => event.kind === "CONTEXT").detail, "checkpoint 1 complete");
+    assert.equal(snapshot.events.find((event) => event.kind === "CONTEXT").status, "ok");
     assert.equal(snapshot.events.at(-1).kind, "DONE");
     assert.doesNotMatch(JSON.stringify(snapshot), /cat \/state\/status/);
   } finally {

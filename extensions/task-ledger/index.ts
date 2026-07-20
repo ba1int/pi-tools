@@ -68,20 +68,38 @@ export default function taskLedger(pi: ExtensionAPI) {
   let snapshot: ReturnType<typeof createLedgerSnapshot> | null = null;
   let lastThinking = "unknown";
   let contextCheckpointPending = false;
+  let contextCheckpointSequence: number | null = null;
 
   const save = () => {
     if (snapshot) writeSnapshot(ledgerPath, snapshot);
   };
 
   pi.events.on(CONTEXT_CHECKPOINT_EVENT, (data) => {
-    const pending = (data as { pending?: boolean } | undefined)?.pending === true;
+    const event = data as {
+      pending?: boolean;
+      status?: string;
+      reason?: string;
+      count?: number;
+    } | undefined;
+    const pending = event?.pending === true;
     contextCheckpointPending = pending;
-    if (!pending || !snapshot?.taskId) return;
-    appendLedgerEvent(snapshot, {
-      kind: "context",
-      detail: "checkpointing active task",
-      status: "running",
-    });
+    if (!snapshot?.taskId) return;
+    if (pending) {
+      contextCheckpointSequence = appendLedgerEvent(snapshot, {
+        kind: "context",
+        detail: `${event?.reason || "threshold"} checkpoint`,
+        status: "running",
+      });
+    } else if (contextCheckpointSequence !== null) {
+      const failed = event?.status === "fail";
+      updateLedgerEvent(snapshot, contextCheckpointSequence, {
+        detail: failed
+          ? "checkpoint failed closed"
+          : `checkpoint ${Math.max(1, Number(event?.count) || 1)} complete`,
+        status: failed ? "fail" : "ok",
+      });
+      contextCheckpointSequence = null;
+    }
     save();
   });
 
@@ -173,6 +191,7 @@ export default function taskLedger(pi: ExtensionAPI) {
     snapshot.taskOrdinal = previousOrdinal(ledgerPath, snapshot.sessionId);
     lastThinking = pi.getThinkingLevel();
     toolRuns.clear();
+    contextCheckpointSequence = null;
     save();
   });
 

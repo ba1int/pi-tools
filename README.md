@@ -78,30 +78,35 @@ for fixed-model benchmarks. Model IDs can be overridden with
 ## Long-running context
 
 `context-sentinel` checkpoints a continuing interactive tool loop through Pi's
-native compactor once the active context reaches 75%. It asks the agent to yield
-after the completed tool result, compacts only after the run has settled, and
-then continues automatically. This follows Codex's follow-up-only rollover
-pattern within Pi's public extension lifecycle. It never interrupts a remote
-command. The summary is instructed to retain authorization, topology, mutations,
-validation, recovery position, and the next safe action while dropping repeated
-logs and secret values. Pi then queues a continuation that re-checks uncertain
-live state before another mutation.
+native compactor once the active context reaches its configured safe boundary.
+The installer applies one version-guarded Pi 0.80.10 runtime patch so the check
+runs after a completed tool turn and before the next provider request. Successful
+compaction replaces the live next-turn context in place; failure ends the run
+before another model call or tool can start. No model-authored yield or hidden
+continuation turn is involved.
 
-Set `PI_CONTEXT_SENTINEL_PERCENT` to a value from 50 through 90 for controlled
-tests, or set `PI_CONTEXT_SENTINEL=off` to disable it. The sentinel deliberately
-does not add a second model, job scheduler, or workflow state machine.
+The extension appends the active task ledger's objective and sparse operator
+checkpoints to Pi's native compaction instructions. The generated summary is
+also told to retain authorization, runbook identity, topology, host-by-host
+phase, mutations, validation, blockers, recovery position, approvals, and the
+next safe action while dropping repeated logs and secret values. Set
+`PI_CONTEXT_SENTINEL=off` only to disable this ops-specific instruction and
+ledger layer; Pi's inline native compaction remains enabled by settings.
 
 ## Context budget
 
 GPT-5.6 Sol uses a 272,000-token context window through the `openai-codex`
-provider. Pi's native 16,384-token response reserve therefore starts automatic
-compaction at about 255,616 tokens. This keeps a large working set while
-avoiding the cache-read overhead observed with the 372,000-token window.
+provider. The installer configures a 68,000-token reserve, so inline automatic
+compaction begins just above 204,000 tokens—about 75%—while retaining Pi's
+native 20,000-token recent-history window. This leaves enough headroom for a
+large tool result and the compaction request itself.
 
 The limit is a plain model override in `config/models.json`; there is no custom
-compactor or extra model call. The installer merges the override into the
-machine-local `models.json` and preserves unrelated providers, custom models,
-and per-model options.
+compactor, second summarizer, or orchestration model. The installer merges the
+override into machine-local configuration and preserves unrelated providers,
+custom models, and per-model options. The runtime patch is exact-version
+guarded and idempotent: an unfamiliar Pi build fails installation instead of
+silently applying a fuzzy patch.
 
 ## Side conversations
 

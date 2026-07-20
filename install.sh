@@ -43,6 +43,8 @@ else
         "@earendil-works/pi-coding-agent@$pi_version"
 fi
 
+node "$repo_root/lib/patch-pi-inline-compaction.mjs" "$pi_manifest" "$pi_version"
+
 settings_path="$agent_dir/settings.json"
 models_path="$agent_dir/models.json"
 if [ -f "$settings_path" ]; then
@@ -113,6 +115,14 @@ let settings = {};
 if (fs.existsSync(settingsPath)) settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
 settings.theme = 'protocol-paper/protocol-ink';
 settings.externalEditor = 'nvim';
+settings.compaction = {
+  ...(settings.compaction && typeof settings.compaction === 'object'
+    ? settings.compaction
+    : {}),
+  enabled: true,
+  reserveTokens: 68000,
+  keepRecentTokens: 20000,
+};
 delete settings.packages;
 fs.writeFileSync(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
 NODE

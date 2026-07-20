@@ -43,6 +43,7 @@ test("installer links the incident skill without retiring domain skills", async 
   assert.match(installer, /appearance-sync\|ssh-direct\|thinking-router\|context-sentinel\|side-task\|task-ledger\|study-learn-emit\) continue/);
   assert.match(installer, /extensions\/task-ledger" "\$extensions_dir\/task-ledger"/);
   assert.match(installer, /bin\/pi-ledger" "\$npm_prefix\/bin\/pi-ledger"/);
+  assert.match(installer, /patch-pi-inline-compaction\.mjs/);
 });
 
 test("installer applies the repository-owned Sol context budget", async () => {
@@ -58,4 +59,6 @@ test("installer applies the repository-owned Sol context budget", async () => {
   );
   assert.match(installer, /config\/models\.json/);
   assert.match(installer, /merge\(models, fragment\)/);
+  assert.match(installer, /reserveTokens: 68000/);
+  assert.match(installer, /keepRecentTokens: 20000/);
 });

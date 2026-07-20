@@ -3,56 +3,59 @@ import test from "node:test";
 import {
   COMPACTION_INSTRUCTIONS,
   ContextSentinelState,
-  normalizeThreshold,
+  compactionInstructions,
+  operationalManifest,
   sentinelEnabled,
-  usagePercent,
 } from "../extensions/context-sentinel/core.js";
 
-test("threshold configuration stays inside a safe operating range", () => {
-  assert.equal(normalizeThreshold(undefined), 75);
-  assert.equal(normalizeThreshold("68.5"), 68.5);
-  assert.throws(() => normalizeThreshold("49"), /between 50 and 90/);
-  assert.throws(() => normalizeThreshold("91"), /between 50 and 90/);
-  assert.throws(() => normalizeThreshold("wat"), /between 50 and 90/);
+test("sentinel can be disabled without changing Pi settings", () => {
   assert.equal(sentinelEnabled(undefined), true);
   assert.equal(sentinelEnabled("off"), false);
 });
 
-test("usage derives a percentage when Pi only exposes token counts", () => {
-  assert.equal(usagePercent({ percent: 74, tokens: 1, contextWindow: 2 }), 74);
-  assert.equal(usagePercent({ percent: null, tokens: 204000, contextWindow: 272000 }), 75);
-  assert.equal(usagePercent({ percent: null, tokens: null, contextWindow: 272000 }), null);
+test("operational manifest carries only the active task and bounded checkpoints", () => {
+  const snapshot = {
+    taskId: "session-004",
+    prompt: "Upgrade the six-host UAT environment",
+    state: "running",
+    cwd: "/work/os-upgrade",
+    notes: Array.from({ length: 15 }, (_, index) => ({
+      state: index === 14 ? "blocked" : "done",
+      subject: `host${index + 1}`,
+      note: `checkpoint ${index + 1}`,
+    })),
+  };
+  const manifest = operationalManifest(snapshot);
+  assert.match(manifest, /Upgrade the six-host UAT environment/);
+  assert.doesNotMatch(manifest, /checkpoint 1(?:\D|$)/);
+  assert.match(manifest, /blocked \/ host15: checkpoint 15/);
+  assert.equal(operationalManifest({ ...snapshot, state: "complete" }), "");
 });
 
-test("sentinel triggers once after a tool turn and rearms after compaction", () => {
-  const state = new ContextSentinelState(75);
-  assert.deepEqual(
-    state.observe({ percent: 74 }, { hasToolResults: true }),
-    { trigger: false, percent: 74 },
-  );
-  assert.deepEqual(
-    state.observe({ percent: 76 }, { hasToolResults: false }),
-    { trigger: false, percent: 76 },
-  );
-  assert.deepEqual(
-    state.observe({ percent: 76 }, { hasToolResults: true }),
-    { trigger: true, percent: 76 },
-  );
-  assert.equal(state.observe({ percent: 80 }, { hasToolResults: true }).trigger, false);
+test("compaction instructions preserve the full operational safety boundary", () => {
+  const instructions = compactionInstructions(null);
+  assert.equal(instructions, COMPACTION_INSTRUCTIONS);
+  assert.match(instructions, /authorization and scope/);
+  assert.match(instructions, /runbook or skill identity/);
+  assert.match(instructions, /host-by-host phase/);
+  assert.match(instructions, /partial mutations/);
+  assert.match(instructions, /ownership or approval boundaries/);
+  assert.match(instructions, /credentials or secret values/);
+  assert.match(instructions, /without repeating a completed mutation/);
+});
 
-  assert.equal(state.beginCompaction(), true);
-  assert.equal(state.beginCompaction(), false);
+test("checkpoint state distinguishes success from fail-closed settlement", () => {
+  const state = new ContextSentinelState();
+  state.begin("threshold");
+  assert.equal(state.compacting, true);
+  assert.equal(state.reason, "threshold");
   state.complete();
-  assert.equal(state.observe({ percent: 70 }, { hasToolResults: true }).trigger, false);
-  assert.equal(state.observe({ percent: 64 }, { hasToolResults: true }).trigger, false);
-  assert.equal(state.observe({ percent: 76 }, { hasToolResults: true }).trigger, true);
-});
+  assert.equal(state.compactions, 1);
+  assert.equal(state.compacting, false);
 
-test("compaction instructions preserve recovery state without secrets or log noise", () => {
-  assert.match(COMPACTION_INSTRUCTIONS, /authorization and scope/);
-  assert.match(COMPACTION_INSTRUCTIONS, /partial mutations/);
-  assert.match(COMPACTION_INSTRUCTIONS, /prior compacted summary/);
-  assert.match(COMPACTION_INSTRUCTIONS, /next safe action/);
-  assert.match(COMPACTION_INSTRUCTIONS, /credentials or secret values/);
-  assert.match(COMPACTION_INSTRUCTIONS, /without repeating a completed mutation/);
+  state.begin("overflow");
+  state.fail();
+  assert.equal(state.compactions, 1);
+  assert.equal(state.compacting, false);
+  assert.equal(state.reason, null);
 });
