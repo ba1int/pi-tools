@@ -4,7 +4,8 @@ export const COMPACTION_INSTRUCTIONS = [
   "This is an in-progress systems operation. Preserve only the operational state needed to continue safely:",
   "authorization and scope; loaded runbook or skill identity; mandatory checkpoints; hosts and topology; host-by-host phase; completed and partial mutations; validated observations; current blockers; rollback or recovery position; exact next safe action; ownership or approval boundaries; and relevant artifact or log paths.",
   "If a prior compacted summary exists, carry forward only still-relevant decisions, completed mutations, and unresolved blockers.",
-  "Clearly distinguish facts from hypotheses. Omit repeated command output, routine warnings, obsolete exploration, and credentials or secret values.",
+  "Clearly distinguish facts from hypotheses. Omit repeated command output, routine warnings, and obsolete exploration.",
+  "Preserve credentials and secret values that are still required to continue the authorized operation. Keep them only in the compacted context: do not echo them into operator-facing prose, ledger checkpoints, tool logs, or unrelated artifacts, and never introduce a value that was not already present.",
   "The task must continue after compaction without repeating a completed mutation.",
 ].join(" ");
 

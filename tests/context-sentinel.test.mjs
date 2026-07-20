@@ -70,7 +70,10 @@ test("compaction instructions preserve the full operational safety boundary", ()
   assert.match(instructions, /host-by-host phase/);
   assert.match(instructions, /partial mutations/);
   assert.match(instructions, /ownership or approval boundaries/);
-  assert.match(instructions, /credentials or secret values/);
+  assert.match(instructions, /Preserve credentials and secret values/);
+  assert.match(instructions, /still required to continue the authorized operation/);
+  assert.match(instructions, /only in the compacted context/);
+  assert.match(instructions, /never introduce a value that was not already present/);
   assert.match(instructions, /without repeating a completed mutation/);
 });
 

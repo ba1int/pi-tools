@@ -91,8 +91,10 @@ native compaction instructions. The fallback is explicitly not treated as proof
 that a phase completed; it keeps compaction oriented when the model omitted a
 semantic checkpoint. The generated summary is also told to retain authorization,
 runbook identity, topology, host-by-host phase, mutations, validation, blockers,
-recovery position, approvals, and the next safe action while dropping repeated
-logs and secret values. Set
+recovery position, approvals, the next safe action, and credentials still needed
+by the active authorized operation. Required secret values stay confined to the
+compacted context and must not be copied into ledger checkpoints, tool logs,
+operator-facing prose, or unrelated artifacts. Set
 `PI_CONTEXT_SENTINEL=off` only to disable this ops-specific instruction and
 ledger layer; Pi's inline native compaction remains enabled by settings.
 
