@@ -78,8 +78,8 @@ export default function taskLedger(pi: ExtensionAPI) {
       "Record one concise, evidence-backed milestone in the local operator ledger during long or staged work.",
     promptSnippet: "Record sparse milestones for long operations",
     promptGuidelines: [
-      "Use only for long/multi-host/staged work: phase or host completion, validation result, blocker/approval, or material plan change.",
-      "Never log routine steps, percentages, repetition, secrets, or unvalidated claims. Keep it concise and continue.",
+      "Use ops_checkpoint only for long/multi-host/staged work: phase or host completion, validation result, blocker/approval, or material plan change.",
+      "With ops_checkpoint, never log routine steps, percentages, repetition, secrets, or unvalidated claims. Keep it concise and continue.",
     ],
     parameters: {
       type: "object",

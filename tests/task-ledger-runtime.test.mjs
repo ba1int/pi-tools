@@ -42,6 +42,16 @@ test("registration does not query Pi before the runtime is initialized", () => {
   assert.equal(handlers.has("session_start"), true);
 });
 
+test("checkpoint prompt guidance names the tool in every flat guideline", () => {
+  const { tools } = harness();
+  const checkpoint = tools.get("ops_checkpoint");
+  assert.ok(checkpoint);
+  assert.equal(
+    checkpoint.promptGuidelines.every((guideline) => guideline.includes("ops_checkpoint")),
+    true,
+  );
+});
+
 test("runtime events create a zero-prompt checkpoint record", async () => {
   const stateHome = mkdtempSync(join(tmpdir(), "pi-ledger-runtime-"));
   const previous = {
