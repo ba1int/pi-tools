@@ -11,11 +11,13 @@ import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   appendLedgerEvent,
+  appendLedgerNote,
   createLedgerSnapshot,
   ledgerCwdLabel,
   modelLabel,
   recordAssistantUsage,
   resolveLedgerPath,
+  sanitizeLedgerText,
   startLedgerTask,
   toolLedgerDetail,
   toolLedgerKind,
@@ -68,6 +70,77 @@ export default function taskLedger(pi: ExtensionAPI) {
   const save = () => {
     if (snapshot) writeSnapshot(ledgerPath, snapshot);
   };
+
+  pi.registerTool({
+    name: "ops_checkpoint",
+    label: "checkpoint",
+    description:
+      "Record one concise, evidence-backed milestone in the local operator ledger during long or staged work.",
+    promptSnippet: "Record sparse milestones for long operations",
+    promptGuidelines: [
+      "Use only for long/multi-host/staged work: phase or host completion, validation result, blocker/approval, or material plan change.",
+      "Never log routine steps, percentages, repetition, secrets, or unvalidated claims. Keep it concise and continue.",
+    ],
+    parameters: {
+      type: "object",
+      required: ["state", "note"],
+      properties: {
+        state: {
+          type: "string",
+          enum: ["start", "working", "done", "verify", "blocked", "waiting", "changed"],
+          "~kind": "Union",
+        },
+        subject: {
+          type: "string",
+          maxLength: 80,
+          "~kind": "String",
+        },
+        note: {
+          type: "string",
+          minLength: 1,
+          maxLength: 180,
+          "~kind": "String",
+        },
+      },
+      "~kind": "Object",
+    } as const,
+    async execute(_toolCallId, params) {
+      if (!snapshot?.taskId || !["queued", "running"].includes(snapshot.state)) {
+        return {
+          content: [{ type: "text", text: "checkpoint skipped: no active task" }],
+          details: { recorded: false },
+        };
+      }
+      const entry = appendLedgerNote(snapshot, params);
+      save();
+      return {
+        content: [{ type: "text", text: entry ? "checkpoint recorded" : "checkpoint skipped" }],
+        details: { recorded: Boolean(entry), state: entry?.state ?? null },
+      };
+    },
+    renderCall(args, theme) {
+      const state = sanitizeLedgerText(
+        typeof args?.state === "string" ? args.state.toUpperCase() : "NOTE",
+        12,
+      );
+      const subject = typeof args?.subject === "string" && args.subject.trim()
+        ? ` ${sanitizeLedgerText(args.subject, 36)}`
+        : "";
+      const note = typeof args?.note === "string"
+        ? ` · ${sanitizeLedgerText(args.note, 80)}`
+        : "";
+      return {
+        invalidate() {},
+        render(width: number) {
+          const available = Math.max(1, width - 11);
+          const detail = `${subject}${note}`.slice(0, available);
+          return [
+            `${theme.fg("toolTitle", theme.bold("checkpoint"))} ${theme.fg("accent", state)}${theme.fg("muted", detail)}`,
+          ];
+        },
+      };
+    },
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
@@ -141,7 +214,7 @@ export default function taskLedger(pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_start", async (event) => {
-    if (!snapshot?.taskId) return;
+    if (!snapshot?.taskId || event.toolName === "ops_checkpoint") return;
     const detail = toolLedgerDetail(event.toolName, event.args);
     const sequence = appendLedgerEvent(snapshot, {
       kind: toolLedgerKind(event.toolName),
@@ -153,7 +226,7 @@ export default function taskLedger(pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_end", async (event) => {
-    if (!snapshot?.taskId) return;
+    if (!snapshot?.taskId || event.toolName === "ops_checkpoint") return;
     const run = toolRuns.get(event.toolCallId);
     const outcome = toolLedgerOutcome(event.result, event.isError);
     if (run) {

@@ -7,6 +7,7 @@ import taskLedger from "../extensions/task-ledger/index.ts";
 
 function harness() {
   const handlers = new Map();
+  const tools = new Map();
   let thinking = "low";
   const pi = {
     on(name, handler) {
@@ -14,6 +15,9 @@ function harness() {
     },
     getThinkingLevel() {
       return thinking;
+    },
+    registerTool(tool) {
+      tools.set(tool.name, tool);
     },
   };
   const ctx = {
@@ -25,7 +29,7 @@ function harness() {
     },
   };
   taskLedger(pi);
-  return { ctx, handlers, setThinking: (level) => { thinking = level; } };
+  return { ctx, handlers, tools, setThinking: (level) => { thinking = level; } };
 }
 
 test("registration does not query Pi before the runtime is initialized", () => {
@@ -33,6 +37,7 @@ test("registration does not query Pi before the runtime is initialized", () => {
   taskLedger({
     on(name, handler) { handlers.set(name, handler); },
     getThinkingLevel() { throw new Error("runtime not initialized"); },
+    registerTool() {},
   });
   assert.equal(handlers.has("session_start"), true);
 });
@@ -52,7 +57,7 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
 
   try {
     const testHarness = harness();
-    const { handlers, ctx } = testHarness;
+    const { handlers, tools, ctx } = testHarness;
     await handlers.get("session_start")({}, ctx);
     await handlers.get("input")({
       source: "interactive",
@@ -70,6 +75,26 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
       toolCallId: "tool-1",
       toolName: "ssh_exec",
       result: { details: { exitCode: 0, elapsedMs: 430 } },
+      isError: false,
+    }, ctx);
+    await handlers.get("tool_execution_start")({
+      toolCallId: "tool-note",
+      toolName: "ops_checkpoint",
+      args: {
+        state: "done",
+        subject: "lab-prod-app01",
+        note: "Middleware health validated",
+      },
+    }, ctx);
+    const checkpointResult = await tools.get("ops_checkpoint").execute("tool-note", {
+      state: "done",
+      subject: "lab-prod-app01",
+      note: "Middleware health validated",
+    });
+    await handlers.get("tool_execution_end")({
+      toolCallId: "tool-note",
+      toolName: "ops_checkpoint",
+      result: checkpointResult,
       isError: false,
     }, ctx);
     await handlers.get("message_end")({
@@ -92,6 +117,13 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
     assert.equal(snapshot.events.find((event) => event.kind === "SSH").status, "ok");
     assert.equal(snapshot.events.find((event) => event.kind === "SSH").detail, "lab-prod-app01");
     assert.equal(snapshot.events.some((event) => event.kind === "ROUTE" && event.detail === "low → high"), true);
+    assert.deepEqual(snapshot.notes, [{
+      at: snapshot.notes[0].at,
+      state: "done",
+      subject: "lab-prod-app01",
+      note: "Middleware health validated",
+    }]);
+    assert.equal(snapshot.events.some((event) => event.detail === "ops checkpoint"), false);
     assert.equal(snapshot.events.at(-1).kind, "DONE");
     assert.doesNotMatch(JSON.stringify(snapshot), /cat \/state\/status/);
   } finally {

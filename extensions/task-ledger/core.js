@@ -4,7 +4,18 @@ import { basename, join } from "node:path";
 
 export const LEDGER_SCHEMA_VERSION = 1;
 export const MAX_LEDGER_EVENTS = 48;
+export const MAX_LEDGER_NOTES = 16;
 export const FINISHED_VISIBILITY_MS = 30 * 60 * 1000;
+
+const LEDGER_NOTE_STATES = new Set([
+  "start",
+  "working",
+  "done",
+  "verify",
+  "blocked",
+  "waiting",
+  "changed",
+]);
 
 const ANSI_PATTERN = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)?)/g;
 const CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
@@ -131,7 +142,40 @@ export function createLedgerSnapshot({
     error: null,
     nextSequence: 1,
     events: [],
+    notes: [],
   };
+}
+
+export function appendLedgerNote(snapshot, {
+  state,
+  subject = "",
+  note,
+  at = Date.now(),
+}, maxNotes = MAX_LEDGER_NOTES) {
+  const normalizedState = sanitizeLedgerText(state, 16).toLowerCase();
+  const entry = {
+    at,
+    state: LEDGER_NOTE_STATES.has(normalizedState) ? normalizedState : "working",
+    subject: sanitizeLedgerText(subject, 80),
+    note: sanitizeLedgerText(note, 180),
+  };
+  if (!entry.note) return null;
+
+  if (!Array.isArray(snapshot.notes)) snapshot.notes = [];
+  const previous = snapshot.notes.at(-1);
+  if (previous
+      && previous.state === entry.state
+      && previous.subject === entry.subject
+      && previous.note === entry.note) {
+    return previous;
+  }
+
+  snapshot.notes.push(entry);
+  if (snapshot.notes.length > maxNotes) {
+    snapshot.notes.splice(0, snapshot.notes.length - maxNotes);
+  }
+  snapshot.updatedAt = at;
+  return entry;
 }
 
 export function appendLedgerEvent(snapshot, {
@@ -184,6 +228,7 @@ export function startLedgerTask(snapshot, { prompt, thinking, model, now = Date.
   snapshot.error = null;
   snapshot.nextSequence = 1;
   snapshot.events = [];
+  snapshot.notes = [];
   appendLedgerEvent(snapshot, {
     kind: "route",
     detail: `thinking ${snapshot.thinking}`,
@@ -293,6 +338,16 @@ export function lastLedgerEvent(snapshot) {
   return events.at(-1) || null;
 }
 
+export function lastLedgerNote(snapshot) {
+  const notes = Array.isArray(snapshot?.notes) ? snapshot.notes : [];
+  return notes.at(-1) || null;
+}
+
+export function ledgerNoteDetail(note) {
+  if (!note) return "";
+  return [note.subject, note.note].filter(Boolean).join(" · ");
+}
+
 function stateRank(state) {
   if (["queued", "running"].includes(state)) return 0;
   if (state === "failed") return 1;
@@ -378,9 +433,9 @@ function paint(value, style, enabled) {
 }
 
 function statusStyle(status) {
-  if (["fail", "failed", "error", "aborted"].includes(status)) return ANSI.coral;
-  if (["run", "running", "low", "high", "xhigh", "medium"].includes(status)) return ANSI.teal;
-  if (["stale", "stopped", "idle", "queued"].includes(status)) return ANSI.muted;
+  if (["fail", "failed", "error", "aborted", "blocked"].includes(status)) return ANSI.coral;
+  if (["run", "running", "start", "working", "verify", "low", "high", "xhigh", "medium"].includes(status)) return ANSI.teal;
+  if (["stale", "stopped", "idle", "queued", "waiting", "changed"].includes(status)) return ANSI.muted;
   return ANSI.ink;
 }
 
@@ -443,14 +498,17 @@ export function renderAgentBoard(records, {
       const selected = record.key === selectedKey || (!selectedKey && index === 0);
       const marker = selected ? "›" : " ";
       const snapshot = record.snapshot;
+      const note = lastLedgerNote(snapshot);
       const event = lastLedgerEvent(snapshot);
       const age = snapshot.startedAt
         ? elapsedLabel((snapshot.finishedAt || now) - snapshot.startedAt)
         : "—";
       const task = snapshot.prompt || snapshot.sessionName || "Waiting for a task.";
-      const checkpoint = event
-        ? `${event.kind} ${event.detail || event.status}`
-        : "No checkpoint";
+      const checkpoint = note
+        ? `${String(note.state).toUpperCase()} ${ledgerNoteDetail(note)}`
+        : event
+          ? `${event.kind} ${event.detail || event.status}`
+          : "No checkpoint";
       const row = `${marker} ${pad(String(index + 1).padStart(2, "0"), 4)} `
         + `${pad(record.displayState.toUpperCase(), 10)} ${pad(age, 7)} `
         + `${pad(String(snapshot.thinking || "—").toUpperCase(), 7)} `
@@ -526,6 +584,32 @@ export function renderLedger(snapshot, {
   lines.push(paint("TASK", ANSI.muted, color));
   lines.push(paint(clip(snapshot.prompt || "Waiting for a task.", columns), ANSI.ink, color));
   lines.push(paint(rule, ANSI.rule, color));
+
+  lines.push(paint("FIELD NOTES", ANSI.bold + ANSI.teal, color));
+  const noteCapacity = Math.max(1, Math.min(5, rows - 15));
+  const notes = Array.isArray(snapshot.notes) ? snapshot.notes.slice(-noteCapacity) : [];
+  if (notes.length === 0) {
+    lines.push(paint("--:--:--  —          No operator notes yet.", ANSI.muted, color));
+  } else {
+    for (const note of notes) {
+      const timestamp = `${clockLabel(note.at)}  `;
+      const stateLabel = `${pad(String(note.state).toUpperCase(), 10)} `;
+      lines.push(
+        paint(timestamp, ANSI.muted, color)
+          + paint(stateLabel, statusStyle(String(note.state)), color)
+          + paint(
+            clip(
+              ledgerNoteDetail(note),
+              Math.max(1, columns - timestamp.length - stateLabel.length),
+            ),
+            ANSI.text,
+            color,
+          ),
+      );
+    }
+  }
+  lines.push(paint(rule, ANSI.rule, color));
+  lines.push(paint("ACTIVITY", ANSI.bold + ANSI.ink, color));
 
   const fixed = 4 + 1 + 8 + 1 + 12 + 1 + 10 + 3;
   const detailWidth = Math.max(18, columns - fixed);

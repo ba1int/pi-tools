@@ -6,10 +6,14 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   MAX_LEDGER_EVENTS,
+  MAX_LEDGER_NOTES,
   appendLedgerEvent,
+  appendLedgerNote,
   createLedgerSnapshot,
   ledgerDisplayState,
   ledgerFocusScore,
+  ledgerNoteDetail,
+  lastLedgerNote,
   loadLedgerRecords,
   renderAgentBoard,
   renderLedger,
@@ -126,6 +130,55 @@ test("task snapshots retain a bounded, updateable event ledger", () => {
   assert.equal(snapshot.events.length, MAX_LEDGER_EVENTS);
 });
 
+test("operator field notes are sanitized, deduplicated, and bounded separately", () => {
+  const snapshot = createLedgerSnapshot({
+    sessionId: "notes-session",
+    sessionName: "ops",
+    cwd: "/work",
+    model: { id: "gpt-5.6-sol" },
+    thinking: "high",
+    now: 1000,
+  });
+  startLedgerTask(snapshot, {
+    prompt: "Upgrade the six-host environment.",
+    thinking: "high",
+    model: { id: "gpt-5.6-sol" },
+    now: 2000,
+  });
+  const first = appendLedgerNote(snapshot, {
+    state: "done",
+    subject: "web01\n",
+    note: "OS and \x1b[31mDocker\x1b[0m validated",
+    at: 3000,
+  });
+  assert.deepEqual(first, {
+    at: 3000,
+    state: "done",
+    subject: "web01",
+    note: "OS and Docker validated",
+  });
+  assert.equal(ledgerNoteDetail(first), "web01 · OS and Docker validated");
+  appendLedgerNote(snapshot, {
+    state: "done",
+    subject: "web01",
+    note: "OS and Docker validated",
+    at: 3100,
+  });
+  assert.equal(snapshot.notes.length, 1);
+
+  for (let index = 0; index < MAX_LEDGER_NOTES + 5; index += 1) {
+    appendLedgerNote(snapshot, {
+      state: index % 2 ? "working" : "verify",
+      subject: `host${index}`,
+      note: `checkpoint ${index}`,
+      at: 4000 + index,
+    });
+  }
+  assert.equal(snapshot.notes.length, MAX_LEDGER_NOTES);
+  assert.equal(lastLedgerNote(snapshot).subject, `host${MAX_LEDGER_NOTES + 4}`);
+  assert.equal(snapshot.events.length, 1);
+});
+
 test("tool records expose targets and outcomes without raw commands", () => {
   assert.equal(
     toolLedgerDetail("ssh_exec", { host: "lab-prod-app01", command: "cat /secret" }),
@@ -157,11 +210,20 @@ test("plain renderer produces a Protocol Ink record without ANSI escapes", () =>
     now: 2000,
   });
   snapshot.state = "running";
+  appendLedgerNote(snapshot, {
+    state: "done",
+    subject: "lab-dev-app01",
+    note: "Icinga validation passed",
+    at: 4000,
+  });
   const output = renderLedger(snapshot, { width: 80, height: 22, color: false, now: 5000 });
   assert.match(output, /PI \/ TASK LEDGER/);
   assert.match(output, /RUNNING\s+00:03/);
   assert.match(output, /Wire lab-dev-app01 into Icinga/);
   assert.match(output, /ROUTE.*thinking low.*LOW/);
+  assert.match(output, /FIELD NOTES/);
+  assert.match(output, /DONE.*lab-dev-app01 · Icinga validation passed/);
+  assert.match(output, /ACTIVITY/);
   assert.equal(output.split("\n").at(-1), "q close");
   assert.doesNotMatch(output, /zero extra model tokens|local only|live event feed/);
   assert.doesNotMatch(output, /\x1b/);
@@ -323,6 +385,34 @@ test("agent board keeps the selected record visible in a long list", () => {
   });
   assert.match(output, /› 20.*Task 20/);
   assert.doesNotMatch(output, /Task 1\s/);
+});
+
+test("agent board prefers the latest field note over mechanical activity", () => {
+  const now = Date.now();
+  const snapshot = recordFixture({
+    paneId: "terminal_4",
+    processId: process.pid,
+    state: "running",
+    prompt: "Upgrade the production environment.",
+    updatedAt: now,
+  });
+  appendLedgerNote(snapshot, {
+    state: "done",
+    subject: "web02",
+    note: "Healthy after reboot",
+    at: now + 1,
+  });
+  appendLedgerEvent(snapshot, {
+    kind: "ssh",
+    detail: "app01",
+    status: "running",
+    at: now + 2,
+  });
+  const output = renderAgentBoard([
+    { key: "pane-terminal_4", snapshot, displayState: "running" },
+  ], { width: 110, height: 18, color: false, now: now + 3 });
+  assert.match(output, /DONE web02 · Healthy after rebo…/);
+  assert.doesNotMatch(output, /SSH app01/);
 });
 
 test("agent board does not wrap its own rows in a narrow floating pane", () => {

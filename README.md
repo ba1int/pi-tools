@@ -147,6 +147,15 @@ model context, call another model, store raw command output, or record hidden
 reasoning. Each snapshot retains at most 48 checkpoint rows beneath
 `${XDG_STATE_HOME:-~/.local/state}/pi-ledger` with user-only permissions.
 
+For long, multi-host, or materially staged work, the same extension exposes a
+small `ops_checkpoint` tool. Pi uses it to leave concise operator-facing field
+notes when a host or phase completes, validation changes the known state, work
+becomes blocked, approval is needed, or the plan materially changes. Routine
+commands, percentages, unsupported claims, and repeated narration are excluded
+by the tool guidance. These notes are bounded separately from mechanical tool
+activity, require no slash command or second model, and add only the checkpoint
+call itself to the active Pi conversation.
+
 The displayed task follows substantial user pivots, including queued follow-ups
 and steering messages. A small local relevance score promotes concrete actions,
 hosts, incidents, and ticket-like identifiers while ignoring acknowledgements
@@ -155,8 +164,8 @@ and generic prompts such as “continue” or “check again”; it makes no mod
 Run `pi-ledger` to follow the current record. With one Pi pane it opens the
 detailed ledger; with several it opens the Protocol Ink agent board. Use
 `↑`/`↓` or `j`/`k` to select an agent, `Enter` to jump to its Zellij pane, and
-`d` to inspect its checkpoints. Finished records leave the board after 30
-minutes, while a dead writer is labeled `STALE`. The workstation dotfiles bind
+`d` to inspect its field notes and mechanical activity. Finished records leave
+the board after 30 minutes, while a dead writer is labeled `STALE`. The workstation dotfiles bind
 `Ctrl+o`, then `i` to open the viewer in one floating pane; press `q` to close
 it. Floating `/btw` side conversations stay out of the primary board. Set
 `PI_TASK_LEDGER=off` to disable recording.
