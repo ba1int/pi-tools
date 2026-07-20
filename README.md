@@ -75,6 +75,22 @@ and `/think status` are available for debugging. Set `PI_THINKING_ROUTER=off`
 for fixed-model benchmarks. Model IDs can be overridden with
 `PI_ROUTER_ROUTINE_MODEL` and `PI_ROUTER_FRONTIER_MODEL`.
 
+## Long-running context
+
+`context-sentinel` checkpoints a continuing interactive tool loop through Pi's
+native compactor once the active context reaches 75%. It asks the agent to yield
+after the completed tool result, compacts only after the run has settled, and
+then continues automatically. This follows Codex's follow-up-only rollover
+pattern within Pi's public extension lifecycle. It never interrupts a remote
+command. The summary is instructed to retain authorization, topology, mutations,
+validation, recovery position, and the next safe action while dropping repeated
+logs and secret values. Pi then queues a continuation that re-checks uncertain
+live state before another mutation.
+
+Set `PI_CONTEXT_SENTINEL_PERCENT` to a value from 50 through 90 for controlled
+tests, or set `PI_CONTEXT_SENTINEL=off` to disable it. The sentinel deliberately
+does not add a second model, job scheduler, or workflow state machine.
+
 ## Context budget
 
 GPT-5.6 Sol uses a 272,000-token context window through the `openai-codex`

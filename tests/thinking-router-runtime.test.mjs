@@ -12,6 +12,7 @@ function createHarness() {
   const followUps = [];
   let thinkingLevel = "high";
   let currentModel = { provider: "openai-codex", id: "gpt-5.6-sol" };
+  const eventHandlers = new Map();
 
   const models = new Map([
     ["openai-codex/gpt-5.6-luna", { provider: "openai-codex", id: "gpt-5.6-luna" }],
@@ -19,6 +20,17 @@ function createHarness() {
   ]);
 
   const pi = {
+    events: {
+      emit(name, data) {
+        eventHandlers.get(name)?.forEach((handler) => handler(data));
+      },
+      on(name, handler) {
+        const listeners = eventHandlers.get(name) ?? [];
+        listeners.push(handler);
+        eventHandlers.set(name, listeners);
+        return () => {};
+      },
+    },
     on(name, handler) {
       handlers.set(name, handler);
     },
@@ -78,6 +90,7 @@ function createHarness() {
     statuses,
     thinkingLevel: () => thinkingLevel,
     model: () => currentModel,
+    emit(name, data) { pi.events.emit(name, data); },
   };
 }
 
@@ -201,6 +214,26 @@ test("runtime retries an unexpected Luna stop once with Sol", async () => {
   assert.equal(harness.followUps.length, 1);
   assert.match(harness.followUps[0].message, /Automatic escalation/);
   assert.equal(harness.followUps[0].options.deliverAs, "followUp");
+});
+
+test("runtime does not escalate an intentional context-checkpoint handoff", async () => {
+  const harness = createHarness();
+  await harness.handlers.get("session_start")({}, harness.ctx);
+  await harness.handlers.get("input")({
+    source: "interactive",
+    text: "Wire this host into monitoring according to its assignment.",
+  }, harness.ctx);
+  harness.emit("pi-tools:context-checkpoint", { pending: true });
+  await harness.handlers.get("agent_end")({
+    messages: [{
+      role: "assistant",
+      content: [{ type: "text", text: "Operational handoff prepared for context checkpoint." }],
+    }],
+  }, harness.ctx);
+  await harness.handlers.get("agent_settled")({}, harness.ctx);
+
+  assert.equal(harness.model().id, "gpt-5.6-luna");
+  assert.equal(harness.followUps.length, 0);
 });
 
 test("runtime preserves legitimate Luna safety stops", async () => {

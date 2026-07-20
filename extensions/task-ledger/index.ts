@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { CONTEXT_CHECKPOINT_EVENT } from "../context-sentinel/core.js";
 import {
   appendLedgerEvent,
   appendLedgerNote,
@@ -66,10 +67,23 @@ export default function taskLedger(pi: ExtensionAPI) {
   const toolRuns = new Map<string, ToolRun>();
   let snapshot: ReturnType<typeof createLedgerSnapshot> | null = null;
   let lastThinking = "unknown";
+  let contextCheckpointPending = false;
 
   const save = () => {
     if (snapshot) writeSnapshot(ledgerPath, snapshot);
   };
+
+  pi.events.on(CONTEXT_CHECKPOINT_EVENT, (data) => {
+    const pending = (data as { pending?: boolean } | undefined)?.pending === true;
+    contextCheckpointPending = pending;
+    if (!pending || !snapshot?.taskId) return;
+    appendLedgerEvent(snapshot, {
+      kind: "context",
+      detail: "checkpointing active task",
+      status: "running",
+    });
+    save();
+  });
 
   pi.registerTool({
     name: "ops_checkpoint",
@@ -144,6 +158,7 @@ export default function taskLedger(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    contextCheckpointPending = false;
     const sessionId = ctx.sessionManager.getSessionId();
     snapshot = createLedgerSnapshot({
       sessionId,
@@ -256,6 +271,7 @@ export default function taskLedger(pi: ExtensionAPI) {
 
   pi.on("agent_settled", async () => {
     if (!snapshot?.taskId) return;
+    if (contextCheckpointPending) return;
     snapshot.finishedAt = Date.now();
     snapshot.state = snapshot.error ? "failed" : "complete";
     appendLedgerEvent(snapshot, {

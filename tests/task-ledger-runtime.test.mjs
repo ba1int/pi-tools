@@ -8,8 +8,20 @@ import taskLedger from "../extensions/task-ledger/index.ts";
 function harness() {
   const handlers = new Map();
   const tools = new Map();
+  const eventHandlers = new Map();
   let thinking = "low";
   const pi = {
+    events: {
+      emit(name, data) {
+        eventHandlers.get(name)?.forEach((handler) => handler(data));
+      },
+      on(name, handler) {
+        const listeners = eventHandlers.get(name) ?? [];
+        listeners.push(handler);
+        eventHandlers.set(name, listeners);
+        return () => {};
+      },
+    },
     on(name, handler) {
       handlers.set(name, handler);
     },
@@ -29,12 +41,19 @@ function harness() {
     },
   };
   taskLedger(pi);
-  return { ctx, handlers, tools, setThinking: (level) => { thinking = level; } };
+  return {
+    ctx,
+    handlers,
+    tools,
+    emit(name, data) { pi.events.emit(name, data); },
+    setThinking: (level) => { thinking = level; },
+  };
 }
 
 test("registration does not query Pi before the runtime is initialized", () => {
   const handlers = new Map();
   taskLedger({
+    events: { on() { return () => {}; } },
     on(name, handler) { handlers.set(name, handler); },
     getThinkingLevel() { throw new Error("runtime not initialized"); },
     registerTool() {},
@@ -116,12 +135,21 @@ test("runtime events create a zero-prompt checkpoint record", async () => {
         stopReason: "stop",
       },
     }, ctx);
+    testHarness.emit("pi-tools:context-checkpoint", { pending: true });
     await handlers.get("agent_settled")({}, ctx);
 
-    const snapshot = JSON.parse(readFileSync(
-      join(stateHome, "pi-ledger", "ops", "agents", "pane-terminal_7.json"),
-      "utf8",
-    ));
+    const snapshotPath = join(stateHome, "pi-ledger", "ops", "agents", "pane-terminal_7.json");
+    const checkpointSnapshot = JSON.parse(readFileSync(snapshotPath, "utf8"));
+    assert.equal(checkpointSnapshot.state, "running");
+    assert.equal(
+      checkpointSnapshot.events.some((event) => event.kind === "CONTEXT" && event.status === "running"),
+      true,
+    );
+
+    testHarness.emit("pi-tools:context-checkpoint", { pending: false });
+    await handlers.get("agent_settled")({}, ctx);
+
+    const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8"));
     assert.equal(snapshot.state, "complete");
     assert.equal(snapshot.thinking, "high");
     assert.equal(snapshot.cost, 0.02);

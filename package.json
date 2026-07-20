@@ -11,6 +11,7 @@
       "./extensions/appearance-sync/index.ts",
       "./extensions/ssh-direct/index.ts",
       "./extensions/thinking-router/index.ts",
+      "./extensions/context-sentinel/index.ts",
       "./extensions/side-task/index.ts",
       "./extensions/task-ledger/index.ts"
     ],

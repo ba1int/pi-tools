@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { CONTEXT_CHECKPOINT_EVENT } from "../context-sentinel/core.js";
 import { RoutingState } from "./core.js";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -39,6 +40,11 @@ export default function thinkingRouter(pi: ExtensionAPI) {
   let pendingSelection: ThinkingLevel | null = null;
   let pendingModel: string | null = null;
   let finalReport = "";
+  let contextCheckpointPending = false;
+
+  pi.events.on(CONTEXT_CHECKPOINT_EVENT, (data) => {
+    contextCheckpointPending = (data as { pending?: boolean } | undefined)?.pending === true;
+  });
 
   const status = (ctx: { hasUI: boolean; ui: { setStatus: (key: string, value?: string) => void } }) => {
     if (!ctx.hasUI) return;
@@ -99,6 +105,7 @@ export default function thinkingRouter(pi: ExtensionAPI) {
     pendingSelection = null;
     pendingModel = null;
     finalReport = "";
+    contextCheckpointPending = false;
     status(ctx);
   });
 
@@ -161,6 +168,10 @@ export default function thinkingRouter(pi: ExtensionAPI) {
   });
 
   pi.on("agent_settled", async (_event, ctx) => {
+    if (contextCheckpointPending) {
+      finalReport = "";
+      return;
+    }
     const escalation = state.noteFinalResult(finalReport);
     finalReport = "";
     if (!escalation) return;

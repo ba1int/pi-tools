@@ -66,7 +66,7 @@ set +f
 for extension_path in "$extensions_dir"/*; do
     [ -e "$extension_path" ] || [ -L "$extension_path" ] || continue
     case "$(basename -- "$extension_path")" in
-        appearance-sync|ssh-direct|thinking-router|side-task|task-ledger|study-learn-emit) continue ;;
+        appearance-sync|ssh-direct|thinking-router|context-sentinel|side-task|task-ledger|study-learn-emit) continue ;;
     esac
     mkdir -p "$retired_dir"
     mv "$extension_path" "$retired_dir/"
@@ -95,6 +95,7 @@ link_path() {
 link_path "$repo_root/extensions/ssh-direct" "$extensions_dir/ssh-direct"
 link_path "$repo_root/extensions/appearance-sync" "$extensions_dir/appearance-sync"
 link_path "$repo_root/extensions/thinking-router" "$extensions_dir/thinking-router"
+link_path "$repo_root/extensions/context-sentinel" "$extensions_dir/context-sentinel"
 link_path "$repo_root/extensions/side-task" "$extensions_dir/side-task"
 link_path "$repo_root/extensions/task-ledger" "$extensions_dir/task-ledger"
 link_path "$repo_root/bin/pi-ledger" "$npm_prefix/bin/pi-ledger"

@@ -13,6 +13,7 @@ test("package exposes the owned incident skill", async () => {
     "./extensions/appearance-sync/index.ts",
     "./extensions/ssh-direct/index.ts",
     "./extensions/thinking-router/index.ts",
+    "./extensions/context-sentinel/index.ts",
     "./extensions/side-task/index.ts",
     "./extensions/task-ledger/index.ts",
   ]);
@@ -39,7 +40,7 @@ test("installer links the incident skill without retiring domain skills", async 
   assert.doesNotMatch(installer, /for skill_path in/);
   assert.match(installer, /extensions\/appearance-sync" "\$extensions_dir\/appearance-sync"/);
   assert.match(installer, /extensions\/thinking-router" "\$extensions_dir\/thinking-router"/);
-  assert.match(installer, /appearance-sync\|ssh-direct\|thinking-router\|side-task\|task-ledger\|study-learn-emit\) continue/);
+  assert.match(installer, /appearance-sync\|ssh-direct\|thinking-router\|context-sentinel\|side-task\|task-ledger\|study-learn-emit\) continue/);
   assert.match(installer, /extensions\/task-ledger" "\$extensions_dir\/task-ledger"/);
   assert.match(installer, /bin\/pi-ledger" "\$npm_prefix\/bin\/pi-ledger"/);
 });
