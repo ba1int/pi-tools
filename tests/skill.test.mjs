@@ -39,7 +39,7 @@ test("installer links the incident skill without retiring domain skills", async 
   assert.doesNotMatch(installer, /for skill_path in/);
   assert.match(installer, /extensions\/appearance-sync" "\$extensions_dir\/appearance-sync"/);
   assert.match(installer, /extensions\/thinking-router" "\$extensions_dir\/thinking-router"/);
-  assert.match(installer, /appearance-sync\|ssh-direct\|thinking-router\|side-task\|task-ledger\) continue/);
+  assert.match(installer, /appearance-sync\|ssh-direct\|thinking-router\|side-task\|task-ledger\|study-learn-emit\) continue/);
   assert.match(installer, /extensions\/task-ledger" "\$extensions_dir\/task-ledger"/);
   assert.match(installer, /bin\/pi-ledger" "\$npm_prefix\/bin\/pi-ledger"/);
 });

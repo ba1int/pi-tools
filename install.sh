@@ -66,7 +66,7 @@ set +f
 for extension_path in "$extensions_dir"/*; do
     [ -e "$extension_path" ] || [ -L "$extension_path" ] || continue
     case "$(basename -- "$extension_path")" in
-        appearance-sync|ssh-direct|thinking-router|side-task|task-ledger) continue ;;
+        appearance-sync|ssh-direct|thinking-router|side-task|task-ledger|study-learn-emit) continue ;;
     esac
     mkdir -p "$retired_dir"
     mv "$extension_path" "$retired_dir/"

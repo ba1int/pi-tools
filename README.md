@@ -177,6 +177,10 @@ reported light/dark appearance, and merges the repository-owned Sol context
 budget. It preserves authentication, sessions, unrelated model
 configuration, and all other skills.
 
+The repository-owned `study-learn-emit` extension is also preserved when the
+separate Study Room package is present, allowing both modular installers to be
+rerun without churning extension backups.
+
 The dependency-free `appearance-sync` extension keeps Pi and its containing
 Zellij session aligned with macOS while Pi is open. It checks every two seconds
 on macOS and every ten seconds in WSL, performs no model calls, and passes Pi a
