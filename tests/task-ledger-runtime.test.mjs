@@ -50,6 +50,8 @@ test("checkpoint prompt guidance names the tool in every flat guideline", () => 
     checkpoint.promptGuidelines.every((guideline) => guideline.includes("ops_checkpoint")),
     true,
   );
+  assert.equal(checkpoint.parameters.properties.state["~kind"], "String");
+  assert.match(checkpoint.parameters.properties.state.description, /blocked.*waiting/);
 });
 
 test("runtime events create a zero-prompt checkpoint record", async () => {

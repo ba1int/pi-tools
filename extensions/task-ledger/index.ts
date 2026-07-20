@@ -87,8 +87,9 @@ export default function taskLedger(pi: ExtensionAPI) {
       properties: {
         state: {
           type: "string",
-          enum: ["start", "working", "done", "verify", "blocked", "waiting", "changed"],
-          "~kind": "Union",
+          maxLength: 12,
+          description: "start|working|done|verify|blocked|waiting|changed",
+          "~kind": "String",
         },
         subject: {
           type: "string",
