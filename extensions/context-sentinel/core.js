@@ -31,7 +31,30 @@ export function operationalManifest(snapshot) {
       if (text) lines.push(`- ${state}${subject ? ` / ${subject}` : ""}: ${text}`);
     }
   }
+  const facts = operationalFacts(snapshot);
+  if (facts.length > 0) {
+    lines.push("recent_tool_outcomes (factual fallback; not proof of phase completion):");
+    for (const fact of facts) {
+      lines.push(`- ${fact.status} / ${fact.kind}: ${fact.detail}`);
+    }
+  }
   return lines.join("\n").slice(0, 4096);
+}
+
+export function operationalFacts(snapshot, maxFacts = 8) {
+  const events = Array.isArray(snapshot?.events) ? snapshot.events : [];
+  const excludedKinds = new Set(["AGENT", "DONE", "INPUT", "ROUTE"]);
+  const unique = new Map();
+  for (const event of events) {
+    const kind = String(event?.kind || "tool").toUpperCase().slice(0, 18);
+    const status = String(event?.status || "unknown").toLowerCase().slice(0, 16);
+    const detail = String(event?.detail || "").replace(/\s+/g, " ").trim().slice(0, 160);
+    if (!detail || excludedKinds.has(kind) || status === "running") continue;
+    const key = `${kind}\0${detail}\0${status}`;
+    unique.delete(key);
+    unique.set(key, { kind: kind.toLowerCase(), status, detail });
+  }
+  return Array.from(unique.values()).slice(-Math.max(0, maxFacts));
 }
 
 export function compactionInstructions(snapshot) {

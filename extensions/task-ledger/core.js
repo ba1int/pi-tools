@@ -19,11 +19,14 @@ const LEDGER_NOTE_STATES = new Set([
 
 const ANSI_PATTERN = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)?)/g;
 const CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/g;
-const TRIVIAL_FOCUS_PATTERN = /^(?:(?:hi|hello|hey|yo|thanks|thank you|okay|ok|cool|nice|great|awesome|got it|sounds good|continue|carry on|go ahead|do it|yes|no|yep|nope)(?:\s+please)?|what(?:'s| is) (?:the )?(?:time|date)(?:\s+(?:now|today))?|how are you|who are you)\s*[.!?]*$/i;
-const GENERIC_FOLLOW_UP_PATTERN = /^(?:(?:can|could|would) you\s+|please\s+)?(?:check|fix|inspect|look into|review|retry|try|update)(?:\s+(?:again|it|that|them|these|this|those))?\s*[.!?]*$/i;
-const TASK_ACTION_PATTERN = /\b(?:add|analy[sz]e|build|check|configure|create|debug|deploy|diagnose|fix|implement|inspect|install|investigate|look into|migrate|monitor|onboard|repair|replace|restart|restore|review|set up|troubleshoot|update|upgrade|validate|verify|wire)\b/i;
+const TRIVIAL_FOCUS_PATTERN = /^(?:(?:hi|hello|hey|yo|thanks|thank you|okay|ok|cool|nice|great|awesome|got it|sounds good|continue|carry on|go ahead|do it|proceed|yes|no|yep|nope)(?:\s+please)?|what(?:'s| is) (?:the )?(?:time|date)(?:\s+(?:now|today))?|how are you|who are you)\s*[.!?]*$/i;
+const GENERIC_FOLLOW_UP_PATTERN = /^(?:(?:(?:can|could|would) you\s+|please\s+)?(?:check|fix|inspect|look into|review|retry|try|update)(?:\s+(?:again|it|that|them|these|this|those))?|(?:so\s+)?how\s+(?:can|do|should|would)\s+(?:we|you)\s+(?:fix|do|continue|proceed)(?:\s+(?:it|this|that))?)\s*[.!?]*$/i;
+const TASK_ACTION_PATTERN = /\b(?:add|analy[sz]e|build|check|configure|create|debug|deploy|diagnose|fix|implement|inspect|install|investigate|look into|migrate|monitor|onboard|proceed|repair|replace|restart|restore|review|set up|test|troubleshoot|update|upgrade|validate|verify|wire)\b/i;
 const OPS_CONTEXT_PATTERN = /\b(?:alert|certificate|cpu|database|db|disk|error|failed|failure|host|icinga|incident|latency|memory|middleware|nagios|openvpn|prod|production|route|server|service|ssh|timeout|ticket|vpn)\b/i;
 const TASK_IDENTIFIER_PATTERN = /\b(?:[A-Z][A-Z0-9]+-\d+|[a-z0-9]+(?:[-.][a-z0-9]+){1,})\b/i;
+const TASK_IDENTIFIER_GLOBAL_PATTERN = /\b(?:[A-Z][A-Z0-9]+-\d+|[a-z0-9]+(?:[-.][a-z0-9]+){1,})\b/gi;
+const EXPLICIT_NEW_TASK_PATTERN = /\b(?:(?:new|separate|unrelated|different)\s+(?:task|ticket|incident|issue)|(?:switch|move)\s+(?:over\s+)?to\s+(?:another|a new|the next)\s+(?:task|ticket|incident|issue))\b/i;
+const CONTINUATION_REFERENCE_PATTERN = /\b(?:are we ready|can you do that|continue|go ahead|how long|keep going|networking team|proceed|proposed|remaining|report|same|still|that|this|those|these|them|what works|what now)\b/i;
 
 export function sanitizeSegment(value, fallback = "terminal") {
   const cleaned = String(value ?? "")
@@ -78,6 +81,24 @@ export function updateLedgerFocus(snapshot, candidate, now = Date.now()) {
   snapshot.prompt = next;
   snapshot.updatedAt = now;
   return true;
+}
+
+function taskIdentifiers(value) {
+  return new Set(
+    Array.from(String(value ?? "").matchAll(TASK_IDENTIFIER_GLOBAL_PATTERN), (match) => match[0].toLowerCase()),
+  );
+}
+
+export function shouldContinueLedgerTask(snapshot, candidate) {
+  if (!snapshot?.taskId) return false;
+  const next = sanitizeLedgerText(candidate, 240);
+  if (!next || EXPLICIT_NEW_TASK_PATTERN.test(next)) return false;
+  if (["queued", "running"].includes(snapshot.state)) return true;
+  if (ledgerFocusScore(next) < 3 || CONTINUATION_REFERENCE_PATTERN.test(next)) return true;
+
+  const currentIds = taskIdentifiers(snapshot.prompt);
+  if (currentIds.size === 0) return false;
+  return Array.from(taskIdentifiers(next)).some((identifier) => currentIds.has(identifier));
 }
 
 export function resolveLedgerDirectory(environment = process.env, home = homedir()) {
@@ -233,6 +254,23 @@ export function startLedgerTask(snapshot, { prompt, thinking, model, now = Date.
     kind: "route",
     detail: `thinking ${snapshot.thinking}`,
     status: snapshot.thinking,
+    at: now,
+  });
+  return snapshot;
+}
+
+export function continueLedgerTask(snapshot, { prompt, thinking, model, now = Date.now() }) {
+  snapshot.prompt = selectLedgerFocus(snapshot.prompt, prompt);
+  snapshot.model = modelLabel(model);
+  snapshot.thinking = sanitizeLedgerText(thinking || snapshot.thinking || "unknown", 16);
+  snapshot.state = "queued";
+  snapshot.updatedAt = now;
+  snapshot.finishedAt = null;
+  snapshot.error = null;
+  appendLedgerEvent(snapshot, {
+    kind: "input",
+    detail: prompt,
+    status: "queued",
     at: now,
   });
   return snapshot;

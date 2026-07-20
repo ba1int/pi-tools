@@ -69,8 +69,58 @@ test("checkpoint prompt guidance names the tool in every flat guideline", () => 
     checkpoint.promptGuidelines.every((guideline) => guideline.includes("ops_checkpoint")),
     true,
   );
+  assert.match(checkpoint.promptGuidelines[0], /exact acceptance contract/);
   assert.equal(checkpoint.parameters.properties.state["~kind"], "String");
   assert.match(checkpoint.parameters.properties.state.description, /blocked.*waiting/);
+});
+
+test("normal conversational follow-ups preserve the active project checkpoint set", async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), "pi-ledger-project-"));
+  const previous = {
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+    ZELLIJ_SESSION_NAME: process.env.ZELLIJ_SESSION_NAME,
+    ZELLIJ_PANE_ID: process.env.ZELLIJ_PANE_ID,
+    PI_SIDE_TASK_FLOAT: process.env.PI_SIDE_TASK_FLOAT,
+  };
+  process.env.XDG_STATE_HOME = stateHome;
+  process.env.ZELLIJ_SESSION_NAME = "ops";
+  process.env.ZELLIJ_PANE_ID = "terminal_9";
+  delete process.env.PI_SIDE_TASK_FLOAT;
+
+  try {
+    const { handlers, tools, ctx } = harness();
+    await handlers.get("session_start")({}, ctx);
+    await handlers.get("input")({
+      source: "interactive",
+      text: "Upgrade the UAT hosts to RHEL 9.7 and Docker 29.0.3.",
+    }, ctx);
+    const checkpoint = await tools.get("ops_checkpoint").execute("acceptance", {
+      state: "start",
+      subject: "acceptance",
+      note: "RHEL 9.7; Docker 29.0.3; strict host gate",
+    });
+    assert.equal(checkpoint.details.recorded, true);
+    await handlers.get("agent_settled")({}, ctx);
+
+    const path = join(stateHome, "pi-ledger", "ops", "agents", "pane-terminal_9.json");
+    const before = JSON.parse(readFileSync(path, "utf8"));
+    await handlers.get("input")({
+      source: "interactive",
+      text: "Can you do that for the remaining hosts?",
+    }, ctx);
+    const after = JSON.parse(readFileSync(path, "utf8"));
+
+    assert.equal(after.taskId, before.taskId);
+    assert.deepEqual(after.notes, before.notes);
+    assert.equal(after.state, "queued");
+    assert.equal(after.events.at(-1).kind, "INPUT");
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    rmSync(stateHome, { recursive: true, force: true });
+  }
 });
 
 test("runtime events create a zero-prompt checkpoint record", async () => {

@@ -4,6 +4,7 @@ import {
   COMPACTION_INSTRUCTIONS,
   ContextSentinelState,
   compactionInstructions,
+  operationalFacts,
   operationalManifest,
   sentinelEnabled,
 } from "../extensions/context-sentinel/core.js";
@@ -30,6 +31,35 @@ test("operational manifest carries only the active task and bounded checkpoints"
   assert.doesNotMatch(manifest, /checkpoint 1(?:\D|$)/);
   assert.match(manifest, /blocked \/ host15: checkpoint 15/);
   assert.equal(operationalManifest({ ...snapshot, state: "complete" }), "");
+});
+
+test("operational manifest has a bounded factual fallback when semantic notes are missing", () => {
+  const snapshot = {
+    taskId: "session-005",
+    prompt: "Recover a staged multi-host middleware rollout",
+    state: "running",
+    cwd: "/work/rollout",
+    notes: [],
+    events: [
+      { kind: "ROUTE", status: "high", detail: "thinking high" },
+      { kind: "AGENT", status: "running", detail: "work started" },
+      { kind: "SSH", status: "fail", detail: "uat-web01 · remote_exit" },
+      { kind: "SSH", status: "ok", detail: "uat-web01" },
+      { kind: "SSH", status: "ok", detail: "uat-web01" },
+      { kind: "WRITE", status: "ok", detail: "/work/evidence/uat-web01.log" },
+      { kind: "INPUT", status: "queued", detail: "continue" },
+    ],
+  };
+  assert.deepEqual(operationalFacts(snapshot), [
+    { kind: "ssh", status: "fail", detail: "uat-web01 · remote_exit" },
+    { kind: "ssh", status: "ok", detail: "uat-web01" },
+    { kind: "write", status: "ok", detail: "/work/evidence/uat-web01.log" },
+  ]);
+  const manifest = operationalManifest(snapshot);
+  assert.match(manifest, /factual fallback; not proof of phase completion/);
+  assert.match(manifest, /fail \/ ssh: uat-web01 · remote_exit/);
+  assert.match(manifest, /ok \/ write: \/work\/evidence\/uat-web01\.log/);
+  assert.doesNotMatch(manifest, /thinking high|work started|continue/);
 });
 
 test("compaction instructions preserve the full operational safety boundary", () => {

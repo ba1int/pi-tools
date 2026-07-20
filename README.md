@@ -85,11 +85,14 @@ compaction replaces the live next-turn context in place; failure ends the run
 before another model call or tool can start. No model-authored yield or hidden
 continuation turn is involved.
 
-The extension appends the active task ledger's objective and sparse operator
-checkpoints to Pi's native compaction instructions. The generated summary is
-also told to retain authorization, runbook identity, topology, host-by-host
-phase, mutations, validation, blockers, recovery position, approvals, and the
-next safe action while dropping repeated logs and secret values. Set
+The extension appends the active task ledger's objective, sparse operator
+checkpoints, and a bounded fallback of recent factual tool outcomes to Pi's
+native compaction instructions. The fallback is explicitly not treated as proof
+that a phase completed; it keeps compaction oriented when the model omitted a
+semantic checkpoint. The generated summary is also told to retain authorization,
+runbook identity, topology, host-by-host phase, mutations, validation, blockers,
+recovery position, approvals, and the next safe action while dropping repeated
+logs and secret values. Set
 `PI_CONTEXT_SENTINEL=off` only to disable this ops-specific instruction and
 ledger layer; Pi's inline native compaction remains enabled by settings.
 
@@ -169,16 +172,19 @@ reasoning. Each snapshot retains at most 48 checkpoint rows beneath
 `${XDG_STATE_HOME:-~/.local/state}/pi-ledger` with user-only permissions.
 
 For long, multi-host, or materially staged work, the same extension exposes a
-small `ops_checkpoint` tool. Pi uses it to leave concise operator-facing field
-notes when a host or phase completes, validation changes the known state, work
-becomes blocked, approval is needed, or the plan materially changes. Routine
+small `ops_checkpoint` tool. Before the first mutation it records the exact
+acceptance contract, then leaves concise operator-facing field notes when a host
+or phase completes, validation changes the known state, work becomes blocked,
+rollback position changes, or the plan materially changes. Routine
 commands, percentages, unsupported claims, and repeated narration are excluded
 by the tool guidance. These notes are bounded separately from mechanical tool
 activity, require no slash command or second model, and add only the checkpoint
 call itself to the active Pi conversation.
 
-The displayed task follows substantial user pivots, including queued follow-ups
-and steering messages. A small local relevance score promotes concrete actions,
+Related conversational follow-ups reopen the same project record, preserving
+its bounded notes and factual event tail. An explicit new task, or clearly
+unrelated concrete work, starts clean. The displayed focus still follows
+substantial pivots: a small local relevance score promotes concrete actions,
 hosts, incidents, and ticket-like identifiers while ignoring acknowledgements
 and generic prompts such as “continue” or “check again”; it makes no model call.
 

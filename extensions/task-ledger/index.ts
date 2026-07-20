@@ -13,12 +13,14 @@ import { CONTEXT_CHECKPOINT_EVENT } from "../context-sentinel/core.js";
 import {
   appendLedgerEvent,
   appendLedgerNote,
+  continueLedgerTask,
   createLedgerSnapshot,
   ledgerCwdLabel,
   modelLabel,
   recordAssistantUsage,
   resolveLedgerPath,
   sanitizeLedgerText,
+  shouldContinueLedgerTask,
   startLedgerTask,
   toolLedgerDetail,
   toolLedgerKind,
@@ -110,7 +112,7 @@ export default function taskLedger(pi: ExtensionAPI) {
       "Record one concise, evidence-backed milestone in the local operator ledger during long or staged work.",
     promptSnippet: "Record sparse milestones for long operations",
     promptGuidelines: [
-      "Use ops_checkpoint only for long/multi-host/staged work: phase or host completion, validation result, blocker/approval, or material plan change.",
+      "For long, multi-host, or staged work, use ops_checkpoint before the first mutation to record the exact acceptance contract, then after each host/phase acceptance, validated blocker, rollback change, or material plan change.",
       "With ops_checkpoint, never log routine steps, percentages, repetition, secrets, or unvalidated claims. Keep it concise and continue.",
     ],
     parameters: {
@@ -209,11 +211,16 @@ export default function taskLedger(pi: ExtensionAPI) {
     }
 
     lastThinking = pi.getThinkingLevel();
-    startLedgerTask(snapshot, {
+    const taskInput = {
       prompt: event.text,
       thinking: lastThinking,
       model: ctx.model,
-    });
+    };
+    if (shouldContinueLedgerTask(snapshot, event.text)) {
+      continueLedgerTask(snapshot, taskInput);
+    } else {
+      startLedgerTask(snapshot, taskInput);
+    }
     toolRuns.clear();
     save();
     return { action: "continue" as const };

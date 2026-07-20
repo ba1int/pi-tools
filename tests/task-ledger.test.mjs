@@ -9,6 +9,7 @@ import {
   MAX_LEDGER_NOTES,
   appendLedgerEvent,
   appendLedgerNote,
+  continueLedgerTask,
   createLedgerSnapshot,
   ledgerDisplayState,
   ledgerFocusScore,
@@ -22,6 +23,7 @@ import {
   resolveLedgerPath,
   sanitizeLedgerText,
   selectLedgerFocus,
+  shouldContinueLedgerTask,
   startLedgerTask,
   toolLedgerDetail,
   toolLedgerOutcome,
@@ -94,6 +96,53 @@ test("adaptive focus promotes concrete work and ignores conversational churn", (
     model: { id: "gpt-5.6-sol" },
   });
   assert.equal(snapshot.prompt, "Fix the OpenVPN route on dc2-relay.");
+});
+
+test("related follow-ups reopen the same project while explicit new work resets", () => {
+  const snapshot = createLedgerSnapshot({
+    sessionId: "continuity-session",
+    sessionName: "ops",
+    cwd: "/work",
+    model: { id: "gpt-5.6-sol" },
+    thinking: "high",
+    now: 1000,
+  });
+  startLedgerTask(snapshot, {
+    prompt: "Test the controlled mock manufacturer on eucaris-nap-t-01.",
+    thinking: "high",
+    model: { id: "gpt-5.6-sol" },
+    now: 2000,
+  });
+  snapshot.state = "complete";
+  snapshot.finishedAt = 3000;
+  appendLedgerNote(snapshot, {
+    state: "blocked",
+    subject: "XMLDSig",
+    note: "SOAP-wrapped digest does not match",
+    at: 2900,
+  });
+  const taskId = snapshot.taskId;
+
+  for (const prompt of [
+    "so how can we fix this?",
+    "Can we test all this without talking to the networking team?",
+    "Proceed with the proxy POC on eucaris-nap-t-01.",
+    "What do I need to give the networking team, and are we ready for three hosts?",
+  ]) {
+    assert.equal(shouldContinueLedgerTask(snapshot, prompt), true, prompt);
+    continueLedgerTask(snapshot, {
+      prompt,
+      thinking: "high",
+      model: { id: "gpt-5.6-sol" },
+      now: snapshot.updatedAt + 1000,
+    });
+    snapshot.state = "complete";
+  }
+
+  assert.equal(snapshot.taskId, taskId);
+  assert.equal(snapshot.notes.length, 1);
+  assert.match(snapshot.prompt, /networking team/i);
+  assert.equal(shouldContinueLedgerTask(snapshot, "New task: investigate Icinga on prod-db02."), false);
 });
 
 test("task snapshots retain a bounded, updateable event ledger", () => {
