@@ -184,6 +184,7 @@ id >/dev/null
 uptime >/dev/null
 /usr/bin/true --middleware-check
 custom_probe app01
+missing_pi_probe --fallback >/dev/null 2>&1 || true
 systemctl status icinga2 >/dev/null
 systemctl status icinga2 >/dev/null
 journalctl -u icinga2 -n 20 >/dev/null
@@ -192,6 +193,11 @@ grep -q . "$HOME/config" || true
 test -d "$HOME"
 probe_state=ready
 sleep 0
+printf '%s\n' alpha beta | sort -u | head -n 1 >/dev/null
+python3 - <<'PY'
+print('read only')
+PY
+head -n 1 "$HOME/config" >/dev/null || true
 pgrep -af icinga >/dev/null || true
 ps -ef >/dev/null
 df -h / >/dev/null
@@ -237,6 +243,7 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       "custom_probe app01",
       "systemctl status icinga2 > /dev/null",
       "journalctl -u icinga2 -n 20 > /dev/null",
+      'head -n 1 "$HOME/config" > /dev/null',
       "pgrep -af icinga > /dev/null",
       "ps -ef > /dev/null",
       "df -h / > /dev/null",

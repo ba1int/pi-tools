@@ -46,7 +46,9 @@ partially applied operations remain visible. Capture is exclusion-based: custom
 monitoring scripts and unfamiliar commands are retained without needing to be
 known by the extension. Exact duplicate commands within one `ssh_exec` call,
 shell bookkeeping and condition tests, temporary mutations, and likely
-credential-bearing commands are excluded. File-writing mechanics such as
+credential-bearing commands are excluded. Failed fallback commands whose
+executable is absent, stdin-only output shapers, and unreplayable read-only
+heredoc launchers are also omitted. File-writing mechanics such as
 temporary files, backups, heredocs, `tee`, and atomic `install` are projected as
 one `sudoedit PATH` or `vi PATH` entry per durable file; Pi still executes the
 original program unchanged. Entries have no Pi-specific comments. Set

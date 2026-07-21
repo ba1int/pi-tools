@@ -91,7 +91,7 @@ __pi_history_file_edit() {
 }
 
 __pi_history_record() {
-  local __pi_cmd="$1" __pi_head __pi_line __pi_line_key __pi_record=0 __pi_kind=''
+  local __pi_cmd="$1" __pi_head __pi_line __pi_line_key __pi_filter_cmd __pi_record=0 __pi_kind=''
   (( __pi_history_guard == 0 )) || return 0
 
   __pi_head=${SHELL_DOLLAR}{__pi_cmd%%[[:space:]]*}
@@ -123,11 +123,31 @@ __pi_history_record() {
   esac
   [[ $__pi_cmd =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*$ ]] && return 0
 
+  # Pipeline consumers without a file operand only describe presentation, not
+  # the inspection itself. Keep direct file reads, including absolute paths.
+  case $__pi_head in
+    head|tail|sort|uniq|column|cut|tr|wc|sed|awk|grep|egrep|fgrep|jq)
+      __pi_filter_cmd=${SHELL_DOLLAR}{__pi_cmd%%>*}
+      case $__pi_filter_cmd in
+        *' /'*|*' ./'*|*' ../'*|*'$HOME/'*|*'${SHELL_DOLLAR}{HOME}/'*|*' ~/'*) ;;
+        *) return 0 ;;
+      esac
+      ;;
+  esac
+
+  # A command that cannot resolve on the host is failed fallback noise. This
+  # still permits custom functions and executable absolute paths.
+  command -v -- "$__pi_head" >/dev/null 2>&1 || return 0
+
   __pi_history_rendered=''
   __pi_record=1
   __pi_kind='observation'
   if __pi_history_python_edit "$__pi_cmd"; then
     __pi_kind='mutation'
+  elif [[ $__pi_head == python || $__pi_head == python3 || $__pi_head == python3.* ]] && [[ $__pi_cmd == *'<<'* ]]; then
+    # The one-line heredoc launcher is not replayable. Mutating Python heredocs
+    # were already projected above as vi/sudoedit entries.
+    return 0
   elif [[ $__pi_cmd =~ $__pi_mutation_re ]]; then
     __pi_kind='mutation'
   elif [[ $__pi_cmd =~ $__pi_redirect_re ]]; then
