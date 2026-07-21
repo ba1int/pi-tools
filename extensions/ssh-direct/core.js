@@ -217,6 +217,15 @@ __pi_history_source_expansion_safe() {
   return 0
 }
 
+__pi_history_normalize_executable() {
+  local __pi_exec_cmd="$1"
+  local __pi_exec_re='^(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(/[^[:space:]]*/)?(rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|groupadd|groupmod|groupdel|useradd|usermod|userdel|passwd|chpasswd|chage|getent|id|stat|systemctl|service)([[:space:]].*)?$'
+  __pi_history_normalized=$__pi_exec_cmd
+  if [[ $__pi_exec_cmd =~ $__pi_exec_re ]]; then
+    __pi_history_normalized="${SHELL_DOLLAR}{BASH_REMATCH[1]}${SHELL_DOLLAR}{BASH_REMATCH[4]}${SHELL_DOLLAR}{BASH_REMATCH[5]}"
+  fi
+}
+
 __pi_history_trace_filter() {
   local __pi_trace __pi_source __pi_expanded __pi_candidate __pi_vars __pi_var __pi_unsafe
   while IFS= read -r __pi_trace; do
@@ -231,12 +240,15 @@ __pi_history_trace_filter() {
       __pi_src=*|__pi_history_*) continue ;;
     esac
 
-    __pi_candidate=$__pi_expanded
+    __pi_history_normalize_executable "$__pi_expanded"
+    __pi_candidate=$__pi_history_normalized
     __pi_unsafe=0
     __pi_vars=$__pi_source
     if [[ $__pi_vars == *'$('* ]]; then
       __pi_unsafe=1
-    elif ! __pi_history_source_expansion_safe "$__pi_source"; then
+    elif [[ $__pi_candidate == chpasswd || $__pi_candidate == sudo\ chpasswd ]]; then
+      :
+    elif ! __pi_history_source_expansion_safe "$__pi_source" && ! __pi_history_source_expansion_safe "$__pi_candidate"; then
       while [[ $__pi_vars =~ \$\{?([A-Za-z_][A-Za-z0-9_]*)\}? ]]; do
         __pi_var=${SHELL_DOLLAR}{BASH_REMATCH[1]}
         case $__pi_var in
