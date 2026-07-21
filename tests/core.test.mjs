@@ -195,6 +195,7 @@ rpm() { return 0; }
 pgrep() { return 0; }
 ps() { return 0; }
 curl() { return 0; }
+mktemp() { printf '%s\n' "$HOME/transient"; }
 chpasswd() { cat >/dev/null; }
 passwd() { return 0; }
 getent() { return 0; }
@@ -217,6 +218,7 @@ grep -q . "$HOME/config" || true
 test -d "$HOME"
 probe_state=ready
 sleep 0
+mktemp >/dev/null
 printf '%s\n' alpha beta | sort -u | head -n 1 >/dev/null
 python3 - <<'PY'
 print('read only')
@@ -241,6 +243,8 @@ printf '%s\\n' staged > "$HOME/config.tmp"
 sudo mv "$HOME/config.tmp" "$HOME/final.conf"
 sudo install "$HOME/config" "$HOME/.atomic.conf.12345"
 sudo mv "$HOME/.atomic.conf.12345" "$HOME/atomic.conf"
+sudo install "$HOME/config" "$HOME/.deploy.conf.new"
+sudo mv "$HOME/.deploy.conf.new" "$HOME/deployed.conf"
 stage="$HOME/.staged.conf.23456"
 sudo install "$HOME/config" "$stage"
 sudo mv "$stage" "$HOME/staged.conf"
@@ -292,6 +296,7 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       'vi "$HOME/config"',
       'sudoedit "$HOME/final.conf"',
       'sudoedit "$HOME/atomic.conf"',
+      'sudoedit "$HOME/deployed.conf"',
       'sudoedit "$HOME/staged.conf"',
       'cat "$HOME/config" > /dev/null',
       'grep -n updated "$HOME/config" > /dev/null',

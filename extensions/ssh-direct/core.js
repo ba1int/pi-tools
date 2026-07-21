@@ -75,7 +75,7 @@ __pi_history_file_edit() {
     *) __pi_plain=$__pi_path ;;
   esac
   case $__pi_plain in
-    ''|/dev/null|/dev/stdout|/dev/stderr|/tmp/*|/var/tmp/*|\$B|\$B/*|\$\{B\}|\$\{B\}/*|\$tmp|\$\{tmp\}|\$stage|\$\{stage\}|*'$('*|*.bak|*.bak\"|*.bak\'|*.absent|*.absent\"|*.absent\'|*.tmp|*.tmp\"|*.tmp\'|*.tmp.*|*.tmp.*\"|*.tmp.*\'|*/.*.[0-9][0-9][0-9][0-9]*)
+    ''|/dev/null|/dev/stdout|/dev/stderr|/tmp/*|/var/tmp/*|\$B|\$B/*|\$\{B\}|\$\{B\}/*|\$tmp|\$\{tmp\}|\$stage|\$\{stage\}|*'$('*|*.bak|*.bak\"|*.bak\'|*.absent|*.absent\"|*.absent\'|*.new|*.new\"|*.new\'|*.tmp|*.tmp\"|*.tmp\'|*.tmp.*|*.tmp.*\"|*.tmp.*\'|*/.*.[0-9][0-9][0-9][0-9]*)
       __pi_history_rendered=''
       return 0
       ;;
@@ -121,7 +121,7 @@ __pi_history_record() {
   # Capture by default. Only discard shell bookkeeping that adds no useful
   # operator context; durable redirects are still treated as file changes.
   case $__pi_head in
-    :|true|false|"["|"[["|test|for|while|until|if|then|else|elif|fi|case|esac|select|do|done|function|return|exit|break|continue|shift|wait|trap|set|shopt|umask|local|declare|typeset|readonly|export|unset|read|mapfile|sleep|command|builtin|type|hash|eval|echo|printf)
+    :|true|false|"["|"[["|test|for|while|until|if|then|else|elif|fi|case|esac|select|do|done|function|return|exit|break|continue|shift|wait|trap|set|shopt|umask|local|declare|typeset|readonly|export|unset|read|mapfile|sleep|command|builtin|type|hash|eval|echo|printf|mktemp)
       if [[ $__pi_cmd =~ $__pi_redirect_re ]]; then
         case ${SHELL_DOLLAR}{BASH_REMATCH[2]} in
           /dev/null|/dev/stdout|/dev/stderr) return 0 ;;
