@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   BoundedCapture,
@@ -11,6 +15,7 @@ import {
   looksLikeRawRemoteTransport,
   normalizeOutputLimit,
   normalizeTimeout,
+  remoteHistoryEnabled,
   remoteProgram,
   sanitizeTerminalText,
   sshArgs,
@@ -92,8 +97,71 @@ test("remote output cannot inject terminal control sequences", () => {
 });
 
 test("remote commands are sent as Bash stdin programs", () => {
-  assert.equal(remoteProgram("hostname\nid"), "set -o pipefail\nhostname\nid\n");
+  assert.equal(remoteProgram("hostname\nid", { recordHistory: false }), "set -o pipefail\nhostname\nid\n");
+  assert.match(remoteProgram("hostname"), /trap .*BASH_COMMAND.* DEBUG/);
   assert.throws(() => remoteProgram("\0"));
+});
+
+test("remote history recording is opt-out", () => {
+  assert.equal(remoteHistoryEnabled(undefined), true);
+  assert.equal(remoteHistoryEnabled("1"), true);
+  assert.equal(remoteHistoryEnabled("off"), false);
+  assert.equal(remoteHistoryEnabled("FALSE"), false);
+});
+
+test("remote history keeps operational commands and drops inspection and secrets", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pi-ssh-history-"));
+  const history = join(home, ".bash_history");
+  const validator = join(home, "validate-demo");
+  await writeFile(validator, "#!/bin/bash\nexit 0\n");
+  await chmod(validator, 0o700);
+  try {
+    const script = remoteProgram(`
+sudo() { "$@"; }
+python3() { cat >/dev/null; }
+hostname >/dev/null
+printf '%s\\n' inspected
+touch "$HOME/changed"
+${validator} app01
+mkdir "$HOME/existing"
+mkdir "$HOME/existing" || true
+printf '%s\\n' safe > "$HOME/config"
+printf '%s\\n' updated > "$HOME/config"
+install "$HOME/config" "$HOME/installed"
+sudo install "$HOME/config" "$HOME/privileged"
+sudo python3 - <<'PY'
+from pathlib import Path
+for path in ['/etc/demo/first.conf', '/etc/demo/second.conf']:
+    Path(path).write_text('updated')
+PY
+cat > "$HOME/heredoc" <<'EOF'
+hello
+EOF
+touch /tmp/pi-history-staging
+printf '%s\\n' staged > /tmp/pi-history-staging.conf
+printf '%s\\n' password=do-not-store > "$HOME/credentials"
+`);
+    const result = spawnSync("bash", ["-se"], {
+      input: script,
+      encoding: "utf8",
+      env: { ...process.env, HOME: home, HISTFILE: history },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const lines = (await readFile(history, "utf8")).trim().split("\n");
+    assert.deepEqual(lines, [
+      'touch "$HOME/changed"',
+      `${validator} app01`,
+      'mkdir "$HOME/existing"',
+      'mkdir "$HOME/existing"',
+      'vi "$HOME/config"',
+      'vi "$HOME/installed"',
+      'sudoedit "$HOME/privileged"',
+      'sudoedit /etc/demo/first.conf /etc/demo/second.conf',
+      'vi "$HOME/heredoc"',
+    ]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("limits have bounded defaults and reject widening", () => {

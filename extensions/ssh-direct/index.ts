@@ -14,6 +14,7 @@ import {
   looksLikeRawRemoteTransport,
   normalizeOutputLimit,
   normalizeTimeout,
+  remoteHistoryEnabled,
   remoteProgram,
   sanitizeTerminalText,
   sshArgs,
@@ -57,6 +58,7 @@ function executeSsh(
   timeoutSeconds: number,
   maxOutputBytes: number,
   controlPath: string | undefined,
+  recordHistory: boolean,
   signal?: AbortSignal,
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
@@ -106,12 +108,13 @@ function executeSsh(
       });
     });
 
-    child.stdin.end(remoteProgram(command));
+    child.stdin.end(remoteProgram(command, { recordHistory }));
   });
 }
 
 export default function sshDirect(pi: ExtensionAPI) {
   const controlPath = prepareControlPath();
+  const recordHistory = remoteHistoryEnabled(process.env.PI_SSH_REMOTE_HISTORY);
 
   pi.registerTool({
     name: "ssh_exec",
@@ -160,6 +163,7 @@ export default function sshDirect(pi: ExtensionAPI) {
         timeoutSeconds,
         maxOutputBytes,
         resolvedControlPath,
+        recordHistory,
         signal,
       );
       const failureKind = classifySshFailure(result);
@@ -174,6 +178,7 @@ export default function sshDirect(pi: ExtensionAPI) {
           truncated: rendered.truncated,
           originalBytes: rendered.originalBytes,
           connectionReuseEnabled: Boolean(resolvedControlPath),
+          remoteHistoryEnabled: recordHistory,
           failureKind,
           transportError: isTransportFailureKind(failureKind),
         },

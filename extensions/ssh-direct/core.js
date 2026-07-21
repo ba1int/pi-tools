@@ -4,6 +4,153 @@ export const DEFAULT_OUTPUT_BYTES = 16 * 1024;
 export const MAX_OUTPUT_BYTES = 32 * 1024;
 export const CONTROL_PERSIST_SECONDS = 60;
 
+const SHELL_DOLLAR = "$";
+const REMOTE_HISTORY_PRELUDE = String.raw`__pi_history_file=${SHELL_DOLLAR}{HISTFILE:-"$HOME/.bash_history"}
+__pi_history_guard=0
+__pi_history_edit_cache='|'
+__pi_history_python_edit() {
+  local __pi_edit_cmd="$1" __pi_rest __pi_match __pi_path __pi_paths='' __pi_seen='|'
+  local __pi_path_re="['\"](/(etc|home|opt|root|srv|usr|var)/[^'\"[:space:]]+)['\"]"
+  local __pi_write_re='(write_text|write_bytes|replace\(|rename\(|unlink\(|shutil\.(copy|move)|os\.(remove|rename|replace|chmod|chown|mkdir|makedirs))'
+
+  [[ $__pi_edit_cmd =~ (^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?python(3([.][0-9]+)?)?[[:space:]] ]] || return 1
+  if [[ -n ${SHELL_DOLLAR}{__pi_history_python_hint:-} ]]; then
+    __pi_history_rendered=$__pi_history_python_hint
+    __pi_history_python_hint=''
+    return 0
+  fi
+  [[ $__pi_edit_cmd =~ $__pi_write_re ]] || return 1
+
+  __pi_rest=$__pi_edit_cmd
+  while [[ $__pi_rest =~ $__pi_path_re ]]; do
+    __pi_match=${SHELL_DOLLAR}{BASH_REMATCH[0]}
+    __pi_path=${SHELL_DOLLAR}{BASH_REMATCH[1]}
+    case $__pi_seen in
+      *"|$__pi_path|"*) ;;
+      *) __pi_seen="$__pi_seen$__pi_path|"; __pi_paths="$__pi_paths $__pi_path" ;;
+    esac
+    __pi_rest=${SHELL_DOLLAR}{__pi_rest#*"$__pi_match"}
+  done
+
+  # Opaque scripts without literal durable paths are intentionally omitted.
+  [[ -n $__pi_paths ]] || { __pi_history_rendered=''; return 0; }
+  if [[ $__pi_edit_cmd =~ (^|[;&|][[:space:]]*)sudo([[:space:]]|$) ]]; then
+    __pi_history_rendered="sudoedit$__pi_paths"
+  else
+    __pi_history_rendered="vi$__pi_paths"
+  fi
+  return 0
+}
+
+__pi_history_file_edit() {
+  local __pi_edit_cmd="$1" __pi_path='' __pi_plain='' __pi_editor='vi'
+  local __pi_tee_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?tee([[:space:]]+-[^[:space:]]+)*[[:space:]]+([^[:space:]]+)'
+  local __pi_redirect_re='(^|[[:space:]])[0-9]*>>?[[:space:]]*([^&[:space:]]+)'
+
+  if [[ $__pi_edit_cmd =~ $__pi_tee_re ]]; then
+    __pi_path=${SHELL_DOLLAR}{BASH_REMATCH[5]}
+  elif [[ $__pi_edit_cmd =~ (^|[[:space:]])(sudo[[:space:]]+)?install[[:space:]] ]]; then
+    [[ $__pi_edit_cmd =~ (^|[[:space:]])(-d|--directory)([[:space:]]|$) ]] && return 1
+    __pi_path=${SHELL_DOLLAR}{__pi_edit_cmd##*[[:space:]]}
+  elif [[ $__pi_edit_cmd =~ (^|[[:space:]])(sudo[[:space:]]+)?cp[[:space:]] ]]; then
+    __pi_path=${SHELL_DOLLAR}{__pi_edit_cmd##*[[:space:]]}
+  elif [[ $__pi_edit_cmd =~ (^|[[:space:]])(sudo[[:space:]]+)?(sed|perl)[[:space:]]+-[^[:space:]]*i ]]; then
+    __pi_path=${SHELL_DOLLAR}{__pi_edit_cmd##*[[:space:]]}
+  elif [[ $__pi_edit_cmd =~ $__pi_redirect_re ]]; then
+    __pi_path=${SHELL_DOLLAR}{BASH_REMATCH[2]}
+  else
+    return 1
+  fi
+
+  case $__pi_path in
+    \"*\") __pi_plain=${SHELL_DOLLAR}{__pi_path#\"}; __pi_plain=${SHELL_DOLLAR}{__pi_plain%\"} ;;
+    \'*\') __pi_plain=${SHELL_DOLLAR}{__pi_path#\'}; __pi_plain=${SHELL_DOLLAR}{__pi_plain%\'} ;;
+    *) __pi_plain=$__pi_path ;;
+  esac
+  case $__pi_plain in
+    ''|/dev/null|/dev/stdout|/dev/stderr|/tmp/*|/var/tmp/*|\$B|\$B/*|\$\{B\}|\$\{B\}/*|*'$('*|*.bak|*.bak\"|*.bak\'|*.absent|*.absent\"|*.absent\')
+      __pi_history_rendered=''
+      return 0
+      ;;
+  esac
+
+  if [[ $__pi_edit_cmd =~ (^|[;&|][[:space:]]*)sudo([[:space:]]|$) ]]; then
+    __pi_editor='sudoedit'
+  else
+    case $__pi_plain in
+      /etc/*|/opt/*|/root/*|/srv/*|/usr/*|/var/*) __pi_editor='sudoedit' ;;
+    esac
+  fi
+  __pi_history_rendered="$__pi_editor $__pi_path"
+  return 0
+}
+
+__pi_history_record() {
+  local __pi_cmd="$1" __pi_head __pi_line __pi_record=0
+  (( __pi_history_guard == 0 )) || return 0
+
+  # Most DEBUG events are inspections. Avoid the full classifier unless the
+  # executable or a redirection could plausibly change state or validate it.
+  __pi_head=${SHELL_DOLLAR}{__pi_cmd%%[[:space:]]*}
+  case $__pi_head in
+    sudo|python|python3|python3.*|rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd|sed|perl|systemctl|service|apt|apt-get|aptitude|dnf|yum|zypper|dpkg|rpm|docker|podman|kubectl|helm|useradd|usermod|userdel|groupadd|groupmod|groupdel|mount|umount|swapon|swapoff|crontab|sysctl|iptables|ip6tables|nft|ufw|firewall-cmd|git|ansible-playbook|icinga2|nginx|apachectl|haproxy|sshd|visudo|validate|validate-*|check-config|configtest|*/validate|*/validate-*|*/check-config|*/configtest) ;;
+    *) [[ $__pi_cmd == *'>'* ]] || return 0 ;;
+  esac
+
+  # History is shared operational context, so never persist likely credentials.
+  local __pi_secret_re='([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Cc][Hh][Pp][Aa][Ss][Ss][Ww][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Bb][Ee][Aa][Rr][Ee][Rr]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy])'
+  if [[ $__pi_cmd =~ $__pi_secret_re ]]; then
+    return 0
+  fi
+
+  local __pi_mutation_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sed|perl)[[:space:]]+-[^[:space:]]*i|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?systemctl[[:space:]]+(daemon-reload|daemon-reexec|restart|reload|stop|start|enable|disable|mask|unmask)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?service[[:space:]]+[^[:space:]]+[[:space:]]+(restart|reload|stop|start)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(apt|apt-get|aptitude|dnf|yum|zypper|dpkg|rpm)[[:space:]]+(install|remove|purge|upgrade|full-upgrade|dist-upgrade|update|erase|-i|-U|-e|--install|--remove|--purge|--upgrade|--erase)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(docker|podman)([[:space:]]+compose)?[[:space:]]+(build|create|down|kill|pause|pull|push|restart|rm|rmi|run|start|stop|unpause|update|up)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(kubectl[[:space:]]+(apply|create|delete|drain|edit|label|annotate|patch|replace|rollout|scale|set|taint|cordon|uncordon)|helm[[:space:]]+(install|upgrade|uninstall|rollback))([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(useradd|usermod|userdel|groupadd|groupmod|groupdel|mount|umount|swapon|swapoff|crontab)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sysctl[[:space:]]+-w|iptables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|ip6tables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|nft[[:space:]]+(add|delete|insert|replace|flush|reset|import|-f)|ufw[[:space:]]+(enable|disable|allow|deny|reject|limit|delete|reset|reload|route)|firewall-cmd[[:space:]]+--(add|remove|reload|complete-reload|set|new|delete))|(^|[;&|][[:space:]]*)(git[[:space:]]+(add|commit|checkout|switch|merge|rebase|reset|pull|push|restore|clean|cherry-pick|tag)|ansible-playbook)([[:space:]]|$)'
+  local __pi_validator_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(systemctl[[:space:]]+(is-active|is-enabled)|icinga2[[:space:]]+daemon[[:space:]]+-C|nginx[[:space:]]+-t|apachectl[[:space:]]+configtest|haproxy[[:space:]]+-c|sshd[[:space:]]+-t|visudo[[:space:]]+-c|([^[:space:]]*/)?(validate|validate-[^[:space:]]*|check-config|configtest))([[:space:]]|$)'
+  local __pi_redirect_re='(^|[[:space:]])[0-9]*>>?[[:space:]]*([^&[:space:]]+)'
+
+  __pi_history_rendered=''
+  if __pi_history_python_edit "$__pi_cmd"; then
+    __pi_record=1
+  elif [[ $__pi_cmd =~ $__pi_mutation_re || $__pi_cmd =~ $__pi_validator_re ]]; then
+    __pi_record=1
+  elif [[ $__pi_cmd =~ $__pi_redirect_re ]]; then
+    case ${SHELL_DOLLAR}{BASH_REMATCH[2]} in
+      /dev/null|/dev/stdout|/dev/stderr) ;;
+      *) __pi_record=1 ;;
+    esac
+  fi
+
+  if (( __pi_record == 1 )); then
+    if [[ -n $__pi_history_rendered ]]; then
+      :
+    elif ! __pi_history_file_edit "$__pi_cmd"; then
+      if [[ $__pi_cmd == *'/tmp/'* || $__pi_cmd == *'/var/tmp/'* || $__pi_cmd == *'$B'* || $__pi_cmd == *'${SHELL_DOLLAR}{B}'* ]]; then
+        return 0
+      fi
+      __pi_line=${SHELL_DOLLAR}{__pi_cmd//$'\r'/}
+      if [[ $__pi_line == *'<<'* ]]; then
+        __pi_line=${SHELL_DOLLAR}{__pi_line%%$'\n'*}
+      else
+        __pi_line=${SHELL_DOLLAR}{__pi_line//$'\n'/ }
+      fi
+    fi
+    if [[ -n $__pi_history_rendered ]]; then
+      case $__pi_history_edit_cache in
+        *"|$__pi_history_rendered|"*) return 0 ;;
+      esac
+      __pi_history_edit_cache="$__pi_history_edit_cache$__pi_history_rendered|"
+      __pi_line=$__pi_history_rendered
+    elif [[ -z $__pi_line ]]; then
+      return 0
+    fi
+    [[ -n $__pi_line && ${SHELL_DOLLAR}{#__pi_line} -le 8192 ]] || return 0
+    __pi_history_guard=1
+    printf '%s\n' "$__pi_line" >> "$__pi_history_file" 2>/dev/null || true
+    __pi_history_guard=0
+  fi
+}
+trap '__pi_history_record "$BASH_COMMAND"' DEBUG
+`;
+
 const HOST_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,252}|[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,252})$/;
 
 const TRANSPORT_FAILURE_KINDS = new Set([
@@ -52,6 +199,10 @@ export function normalizeOutputLimit(value) {
 }
 
 export function connectionReuseEnabled(value) {
+  return !/^(?:0|off|false)$/i.test(String(value ?? ""));
+}
+
+export function remoteHistoryEnabled(value) {
   return !/^(?:0|off|false)$/i.test(String(value ?? ""));
 }
 
@@ -168,8 +319,37 @@ export function sshArgs(host, { controlPath } = {}) {
   return args;
 }
 
-export function remoteProgram(command) {
-  return `set -o pipefail\n${validateCommand(command)}\n`;
+export function remoteProgram(command, { recordHistory = true } = {}) {
+  const prelude = recordHistory ? REMOTE_HISTORY_PRELUDE : "";
+  const validated = validateCommand(command);
+  const pythonHint = recordHistory ? inferPythonHistoryEdit(validated) : "";
+  const hintPrelude = pythonHint
+    ? `__pi_history_python_hint=${shellSingleQuote(pythonHint)}\n`
+    : "";
+  return `${prelude}${hintPrelude}set -o pipefail\n${validated}\n`;
+}
+
+function shellSingleQuote(value) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function inferPythonHistoryEdit(command) {
+  if (!/(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?python(?:3(?:\.\d+)?)?\s/m.test(command)) return "";
+  if (!/(?:write_text|write_bytes|replace\(|rename\(|unlink\(|shutil\.(?:copy|move)|os\.(?:remove|rename|replace|chmod|chown|mkdir|makedirs))/.test(command)) return "";
+  if (/(?:password|passwd|chpasswd|token|secret|api[_-]?key|authorization|bearer|private[_-]?key)/i.test(command)) return "";
+
+  const paths = [];
+  const seen = new Set();
+  const literalPath = /(['"])(\/(?:etc|home|opt|root|srv|usr|var)\/[^'"\s]+)\1/g;
+  for (const match of command.matchAll(literalPath)) {
+    const path = match[2];
+    if (/\.(?:bak|absent)$/.test(path) || seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  if (paths.length === 0) return "";
+  const editor = /(?:^|[;&|]\s*)sudo(?:\s+-\S+)*\s+python/m.test(command) ? "sudoedit" : "vi";
+  return `${editor} ${paths.join(" ")}`;
 }
 
 export function looksLikeRawRemoteTransport(command) {
