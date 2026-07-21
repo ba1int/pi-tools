@@ -11,10 +11,11 @@ profile=${PI_TOOLS_PROFILE:-core}
 
 case $profile in
     core) enabled_extensions='appearance-sync ssh-direct' ;;
+    rescue-experiment) enabled_extensions='appearance-sync ssh-direct senior-rescue' ;;
     ops) enabled_extensions='appearance-sync ssh-direct side-task task-ledger' ;;
     full) enabled_extensions='appearance-sync ssh-direct thinking-router context-sentinel side-task task-ledger' ;;
     *)
-        printf 'error   unknown PI_TOOLS_PROFILE: %s (use core, ops, or full)\n' "$profile" >&2
+        printf 'error   unknown PI_TOOLS_PROFILE: %s (use core, rescue-experiment, ops, or full)\n' "$profile" >&2
         exit 2
         ;;
 esac

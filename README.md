@@ -228,6 +228,13 @@ PI_TOOLS_PROFILE=full ./install.sh  # add experimental router + sentinel too
 features but no model routing. `full` is for experiments and is not the
 recommended daily-driver profile.
 
+`PI_TOOLS_PROFILE=rescue-experiment ./install.sh` is a separate benchmark-only
+profile. It adds the bounded `senior_rescue` tool to `core`: one isolated Sol
+worker receives only `ssh_exec`, an explicit 1–8-host lease, a six-call default
+budget, and a four-minute deadline. Recursive delegation is disabled and Luna
+must verify the returned checkpoint. This profile must not become the default
+unless comparative benchmarks demonstrate a quality win without a safety loss.
+
 The repository-owned `study-learn-emit` extension is also preserved when the
 separate Study Room package is present, allowing both modular installers to be
 rerun without churning extension backups.

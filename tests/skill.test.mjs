@@ -35,6 +35,7 @@ test("installer links the incident skill without retiring domain skills", async 
   );
   assert.doesNotMatch(installer, /for skill_path in/);
   assert.match(installer, /core\) enabled_extensions='appearance-sync ssh-direct'/);
+  assert.match(installer, /rescue-experiment\) enabled_extensions='appearance-sync ssh-direct senior-rescue'/);
   assert.match(installer, /ops\) enabled_extensions='appearance-sync ssh-direct side-task task-ledger'/);
   assert.match(installer, /full\) enabled_extensions='appearance-sync ssh-direct thinking-router context-sentinel side-task task-ledger'/);
   assert.match(installer, /for extension_name in \$enabled_extensions/);

@@ -25,6 +25,24 @@ export function validateHost(value) {
   return value;
 }
 
+export function allowedHosts(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const hosts = String(value).split(",").map((host) => validateHost(host.trim()));
+  if (hosts.length === 0 || hosts.length > 32 || new Set(hosts).size !== hosts.length) {
+    throw new Error("PI_SSH_ALLOWED_HOSTS must contain 1-32 unique literal SSH hosts");
+  }
+  return new Set(hosts);
+}
+
+export function enforceAllowedHost(host, value = process.env.PI_SSH_ALLOWED_HOSTS) {
+  const validated = validateHost(host);
+  const allowed = allowedHosts(value);
+  if (allowed !== null && !allowed.has(validated)) {
+    throw new Error(`host ${validated} is outside this worker's SSH lease`);
+  }
+  return validated;
+}
+
 export function validateCommand(value) {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error("command must be a non-empty Bash program");

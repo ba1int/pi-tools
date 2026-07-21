@@ -4,6 +4,7 @@ import {
   BoundedCapture,
   classifySshFailure,
   connectionReuseEnabled,
+  enforceAllowedHost,
   DEFAULT_OUTPUT_BYTES,
   DEFAULT_TIMEOUT_SECONDS,
   formatResult,
@@ -24,6 +25,13 @@ test("literal SSH aliases are accepted and shell-shaped hosts are rejected", () 
   for (const invalid of ["-oProxyCommand=x", "host;id", "host name", "$(id)", "user@host/path", ""]) {
     assert.throws(() => validateHost(invalid));
   }
+});
+
+test("an optional worker lease restricts SSH to explicit hosts", () => {
+  assert.equal(enforceAllowedHost("app01", "app01,relay01"), "app01");
+  assert.throws(() => enforceAllowedHost("db01", "app01,relay01"), /outside this worker's SSH lease/);
+  assert.throws(() => enforceAllowedHost("app01", "app01,app01"), /unique/);
+  assert.equal(enforceAllowedHost("db01", ""), "db01");
 });
 
 test("SSH argv fixes noninteractive and forwarding behavior", () => {

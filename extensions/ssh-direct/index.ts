@@ -9,6 +9,7 @@ import {
   BoundedCapture,
   classifySshFailure,
   connectionReuseEnabled,
+  enforceAllowedHost,
   formatResult,
   isTransportFailureKind,
   looksLikeRawRemoteTransport,
@@ -18,7 +19,6 @@ import {
   sanitizeTerminalText,
   sshArgs,
   validateCommand,
-  validateHost,
 } from "./core.js";
 
 type ExecResult = {
@@ -149,7 +149,7 @@ export default function sshDirect(pi: ExtensionAPI) {
       })),
     }),
     async execute(_toolCallId, params, signal) {
-      const host = validateHost(params.host);
+      const host = enforceAllowedHost(params.host);
       const command = validateCommand(params.command);
       const timeoutSeconds = normalizeTimeout(params.timeout_seconds);
       const maxOutputBytes = normalizeOutputLimit(params.max_output_bytes);
