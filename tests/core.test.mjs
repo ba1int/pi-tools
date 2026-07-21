@@ -197,6 +197,7 @@ ps() { return 0; }
 curl() { return 0; }
 chpasswd() { cat >/dev/null; }
 passwd() { return 0; }
+getent() { return 0; }
 custom_probe() { return 0; }
 hostname >/dev/null
 id >/dev/null
@@ -205,6 +206,7 @@ uptime >/dev/null
 custom_probe app01
 printf '%s\n' 'sample:opaque-value' | chpasswd
 sudo passwd -u sample
+getent passwd sample
 chpasswd <<< 'sample:do-not-store'
 missing_pi_probe --fallback >/dev/null 2>&1 || true
 systemctl status icinga2 >/dev/null
@@ -234,6 +236,8 @@ mkdir "$HOME/existing"
 mkdir "$HOME/existing" || true
 printf '%s\\n' safe > "$HOME/config"
 printf '%s\\n' updated > "$HOME/config"
+printf '%s\\n' staged > "$HOME/config.tmp"
+sudo mv "$HOME/config.tmp" "$HOME/final.conf"
 cat "$HOME/config" >/dev/null
 grep -n updated "$HOME/config" >/dev/null
 install "$HOME/config" "$HOME/installed"
@@ -265,6 +269,7 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       "custom_probe app01",
       "chpasswd",
       "sudo passwd -u sample",
+      "getent passwd sample",
       "systemctl status icinga2 > /dev/null",
       "journalctl -u icinga2 -n 20 > /dev/null",
       'head -n 1 "$HOME/config" > /dev/null',
@@ -278,6 +283,7 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       `${validator} app01`,
       'mkdir "$HOME/existing"',
       'vi "$HOME/config"',
+      'sudoedit "$HOME/final.conf"',
       'cat "$HOME/config" > /dev/null',
       'grep -n updated "$HOME/config" > /dev/null',
       'vi "$HOME/installed"',
