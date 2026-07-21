@@ -160,7 +160,7 @@ test("remote history recording is opt-out", () => {
   assert.equal(remoteHistoryEnabled("FALSE"), false);
 });
 
-test("remote history keeps operational changes and diagnostics but drops plumbing and secrets", async () => {
+test("remote history captures commands by default but drops plumbing, duplicates, and secrets", async () => {
   const home = await mkdtemp(join(tmpdir(), "pi-ssh-history-"));
   const history = join(home, ".bash_history");
   const validator = join(home, "validate-demo");
@@ -178,13 +178,20 @@ rpm() { return 0; }
 pgrep() { return 0; }
 ps() { return 0; }
 curl() { return 0; }
+custom_probe() { return 0; }
 hostname >/dev/null
 id >/dev/null
 uptime >/dev/null
+/usr/bin/true --middleware-check
+custom_probe app01
 systemctl status icinga2 >/dev/null
 systemctl status icinga2 >/dev/null
 journalctl -u icinga2 -n 20 >/dev/null
 grep -q . "$HOME/config" || true
+[ -d "$HOME" ]
+test -d "$HOME"
+probe_state=ready
+sleep 0
 pgrep -af icinga >/dev/null || true
 ps -ef >/dev/null
 df -h / >/dev/null
@@ -226,6 +233,8 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       "hostname > /dev/null",
       "id > /dev/null",
       "uptime > /dev/null",
+      "/usr/bin/true --middleware-check",
+      "custom_probe app01",
       "systemctl status icinga2 > /dev/null",
       "journalctl -u icinga2 -n 20 > /dev/null",
       "pgrep -af icinga > /dev/null",
