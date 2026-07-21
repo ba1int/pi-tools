@@ -18,6 +18,8 @@ The tool:
 - defaults to a 30-second timeout;
 - caps rendered output at 16 KiB by default and 32 KiB maximum;
 - retains both the beginning and end when output is truncated;
+- appends a concise mutation and validation view to the remote SSH user's Bash
+  history while omitting inspections and likely secret-bearing commands;
 - tells Pi to use parallel tool calls for independent hosts; and
 - blocks model-generated `ssh`, `scp`, `sftp`, and `rsync` transports through
   local Bash so Pi retries through `ssh_exec` automatically.
@@ -26,6 +28,16 @@ Repeated calls to the same host reuse a secured local OpenSSH control socket
 for 60 seconds. This changes transport latency only: commands, results, host
 validation, timeouts, and approval behavior remain identical. Set
 `PI_SSH_MULTIPLEXING=off` to return to one new connection per call.
+
+History capture happens immediately before each selected command, so failed or
+partially applied operations remain visible. File-writing mechanics such as
+temporary files, backups, heredocs, `tee`, and atomic `install` are projected as
+one `sudoedit PATH` or `vi PATH` entry per durable file; Pi still executes the
+original program unchanged. Other operations and validators remain literal.
+Entries have no Pi-specific comments. Set `PI_SSH_REMOTE_HISTORY=off` to disable
+it. This is shared operator context, not an audit log: the remote account's Bash
+history retention and `histappend` policy still determine how long entries
+survive.
 
 Failed calls identify DNS, authentication, host-key, refusal, timeout,
 connection-loss, and ordinary remote-command exits in compact result metadata.
