@@ -93,14 +93,19 @@ __pi_history_file_edit() {
 }
 
 __pi_history_record() {
-  local __pi_cmd="$1" __pi_head __pi_line __pi_line_key __pi_filter_cmd __pi_record=0 __pi_kind=''
+  local __pi_cmd="$1" __pi_head __pi_line __pi_line_key __pi_filter_cmd __pi_secret_safe=0 __pi_record=0 __pi_kind=''
   (( __pi_history_guard == 0 )) || return 0
 
   __pi_head=${SHELL_DOLLAR}{__pi_cmd%%[[:space:]]*}
 
   # History is shared operational context, so never persist likely credentials.
   local __pi_secret_re='([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Cc][Hh][Pp][Aa][Ss][Ss][Ww][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Bb][Ee][Aa][Rr][Ee][Rr]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy])'
-  if [[ $__pi_cmd =~ $__pi_secret_re ]]; then
+  case $__pi_cmd in
+    passwd|passwd\ *|sudo\ passwd|sudo\ passwd\ *|chpasswd|chpasswd\ *|sudo\ chpasswd|sudo\ chpasswd\ *)
+      [[ $__pi_cmd == *'<'* || $__pi_cmd == *'>'* || $__pi_cmd == *':'* ]] || __pi_secret_safe=1
+      ;;
+  esac
+  if (( __pi_secret_safe == 0 )) && [[ $__pi_cmd =~ $__pi_secret_re ]]; then
     return 0
   fi
   case $__pi_cmd in
@@ -219,14 +224,17 @@ __pi_history_trace_filter() {
     while [[ $__pi_vars =~ \$\{?([A-Za-z_][A-Za-z0-9_]*)\}? ]]; do
       __pi_var=${SHELL_DOLLAR}{BASH_REMATCH[1]}
       case $__pi_var in
-        n|user|username|group|host|hostname|service|unit|name|path|file|dir|package|version|port|HOME|SUDO_USER) ;;
+        n|u|g|user|username|group|host|hostname|service|unit|name|path|file|dir|package|version|port|HOME|SUDO_USER) ;;
         *) __pi_unsafe=1 ;;
       esac
       __pi_vars=${SHELL_DOLLAR}{__pi_vars#*"${SHELL_DOLLAR}{BASH_REMATCH[0]}"}
     done
     (( __pi_unsafe == 0 )) || __pi_candidate=$__pi_source
     if [[ $__pi_source == *'>'* ]]; then
-      __pi_candidate=$__pi_source
+      case $__pi_source in
+        *'> /dev/null'*|*'>/dev/null'*|*'> /dev/stdout'*|*'> /dev/stderr'*) ;;
+        *) __pi_candidate=$__pi_source ;;
+      esac
     fi
     __pi_history_record "$__pi_candidate"
   done

@@ -195,12 +195,17 @@ rpm() { return 0; }
 pgrep() { return 0; }
 ps() { return 0; }
 curl() { return 0; }
+chpasswd() { cat >/dev/null; }
+passwd() { return 0; }
 custom_probe() { return 0; }
 hostname >/dev/null
 id >/dev/null
 uptime >/dev/null
 /usr/bin/true --middleware-check
 custom_probe app01
+printf '%s\n' 'sample:opaque-value' | chpasswd
+sudo passwd -u sample
+chpasswd <<< 'sample:do-not-store'
 missing_pi_probe --fallback >/dev/null 2>&1 || true
 systemctl status icinga2 >/dev/null
 systemctl status icinga2 >/dev/null
@@ -258,6 +263,8 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       "uptime > /dev/null",
       "/usr/bin/true --middleware-check",
       "custom_probe app01",
+      "chpasswd",
+      "sudo passwd -u sample",
       "systemctl status icinga2 > /dev/null",
       "journalctl -u icinga2 -n 20 > /dev/null",
       'head -n 1 "$HOME/config" > /dev/null',
