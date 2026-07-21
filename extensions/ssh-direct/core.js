@@ -3,6 +3,10 @@ export const MAX_TIMEOUT_SECONDS = 120;
 export const DEFAULT_OUTPUT_BYTES = 16 * 1024;
 export const MAX_OUTPUT_BYTES = 32 * 1024;
 export const CONTROL_PERSIST_SECONDS = 60;
+export const DEFAULT_TRANSFER_TIMEOUT_SECONDS = 120;
+export const MAX_TRANSFER_TIMEOUT_SECONDS = 900;
+export const DEFAULT_TRANSFER_BYTES = 1024 * 1024 * 1024;
+export const MAX_TRANSFER_BYTES = 10 * 1024 * 1024 * 1024;
 
 const SHELL_DOLLAR = "$";
 const REMOTE_HISTORY_PRELUDE = String.raw`__pi_history_file=${SHELL_DOLLAR}{HISTFILE:-"$HOME/.bash_history"}
@@ -182,6 +186,21 @@ export function validateCommand(value) {
   return value;
 }
 
+export function validateLocalPath(value) {
+  if (typeof value !== "string" || !value.startsWith("/") || value.includes("\0") || /[\r\n]/.test(value)) {
+    throw new Error("local_path must be one absolute local path without NUL or newline bytes");
+  }
+  return value;
+}
+
+export function validateRemotePath(value) {
+  if (typeof value !== "string" || !/^\/(?:[A-Za-z0-9._+@%=-]+\/?)*$/.test(value)) {
+    throw new Error("remote_path must be one absolute path using only letters, digits, slash, dot, underscore, plus, at, percent, equals, and dash");
+  }
+  if (value.split("/").includes("..")) throw new Error("remote_path cannot contain parent traversal");
+  return value;
+}
+
 export function normalizeTimeout(value) {
   if (value === undefined) return DEFAULT_TIMEOUT_SECONDS;
   if (!Number.isInteger(value) || value < 1 || value > MAX_TIMEOUT_SECONDS) {
@@ -194,6 +213,22 @@ export function normalizeOutputLimit(value) {
   if (value === undefined) return DEFAULT_OUTPUT_BYTES;
   if (!Number.isInteger(value) || value < 1024 || value > MAX_OUTPUT_BYTES) {
     throw new Error(`max_output_bytes must be an integer from 1024 to ${MAX_OUTPUT_BYTES}`);
+  }
+  return value;
+}
+
+export function normalizeTransferTimeout(value) {
+  if (value === undefined) return DEFAULT_TRANSFER_TIMEOUT_SECONDS;
+  if (!Number.isInteger(value) || value < 1 || value > MAX_TRANSFER_TIMEOUT_SECONDS) {
+    throw new Error(`timeout_seconds must be an integer from 1 to ${MAX_TRANSFER_TIMEOUT_SECONDS}`);
+  }
+  return value;
+}
+
+export function normalizeTransferLimit(value) {
+  if (value === undefined) return DEFAULT_TRANSFER_BYTES;
+  if (!Number.isInteger(value) || value < 1 || value > MAX_TRANSFER_BYTES) {
+    throw new Error(`max_bytes must be an integer from 1 to ${MAX_TRANSFER_BYTES}`);
   }
   return value;
 }
@@ -319,6 +354,44 @@ export function sshArgs(host, { controlPath } = {}) {
   return args;
 }
 
+function transportOptions(controlPath) {
+  const args = [
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=10",
+    "-o", "ClearAllForwardings=yes",
+    "-o", "ForwardAgent=no",
+    "-o", "ForwardX11=no",
+    "-o", "PermitLocalCommand=no",
+    "-o", "RequestTTY=no",
+    "-o", "UpdateHostKeys=no",
+  ];
+  if (controlPath !== undefined) {
+    if (typeof controlPath !== "string" || controlPath.length === 0 || controlPath.includes("\0")) {
+      throw new Error("controlPath must be a non-empty local path without NUL bytes");
+    }
+    args.push(
+      "-o", "ControlMaster=auto",
+      "-o", `ControlPersist=${CONTROL_PERSIST_SECONDS}`,
+      "-o", `ControlPath=${controlPath}`,
+    );
+  }
+  return args;
+}
+
+export function scpArgs(host, direction, localPath, remotePath, { controlPath } = {}) {
+  const validatedHost = validateHost(host);
+  const validatedLocal = validateLocalPath(localPath);
+  const validatedRemote = validateRemotePath(remotePath);
+  if (!new Set(["upload", "download"]).has(direction)) {
+    throw new Error("direction must be upload or download");
+  }
+  const remote = `${validatedHost}:${validatedRemote}`;
+  const operands = direction === "upload"
+    ? [validatedLocal, remote]
+    : [remote, validatedLocal];
+  return ["-B", "-q", ...transportOptions(controlPath), ...operands];
+}
+
 export function remoteProgram(command, { recordHistory = true } = {}) {
   const prelude = recordHistory ? REMOTE_HISTORY_PRELUDE : "";
   const validated = validateCommand(command);
@@ -329,8 +402,23 @@ export function remoteProgram(command, { recordHistory = true } = {}) {
   return `${prelude}${hintPrelude}set -o pipefail\n${validated}\n`;
 }
 
-function shellSingleQuote(value) {
+export function shellSingleQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+export function remoteFileMetadataCommand(remotePath) {
+  const path = shellSingleQuote(validateRemotePath(remotePath));
+  return `set -e\nsize=$(stat -Lc %s -- ${path})\nsha=$(sha256sum -- ${path} | awk '{print $1}')\nprintf 'size=%s\\nsha256=%s\\n' "$size" "$sha"`;
+}
+
+export function remoteTransferHistoryCommand(localPath, remotePath) {
+  const source = validateLocalPath(localPath).split("/").at(-1) || "file";
+  const destination = validateRemotePath(remotePath);
+  const line = `scp ${source} ${destination}`;
+  if (/(?:password|passwd|token|secret|api[_-]?key|authorization|bearer|private[_-]?key)/i.test(line)) {
+    return "";
+  }
+  return `hist=\${HISTFILE:-\"$HOME/.bash_history\"}\nprintf '%s\\n' ${shellSingleQuote(line)} >> "$hist"`;
 }
 
 function inferPythonHistoryEdit(command) {

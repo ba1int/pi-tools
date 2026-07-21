@@ -6,9 +6,10 @@ skills.
 
 ## SSH Direct
 
-`ssh_exec` executes one Bash program on one explicit SSH destination. The model
-supplies the host on every call, so natural requests can span several machines
-without `/ssh`, active-host state, pickers, or session modes.
+`ssh_exec` executes one Bash program on one explicit SSH destination, while
+`ssh_copy` uploads or downloads one explicit regular file. The model supplies
+the host on every call, so natural requests can span several machines without
+`/ssh`, active-host state, pickers, or session modes.
 
 The tool:
 
@@ -22,7 +23,17 @@ The tool:
   history while omitting inspections and likely secret-bearing commands;
 - tells Pi to use parallel tool calls for independent hosts; and
 - blocks model-generated `ssh`, `scp`, `sftp`, and `rsync` transports through
-  local Bash so Pi retries through `ssh_exec` automatically.
+  local Bash so Pi retries through `ssh_exec` or `ssh_copy` automatically.
+
+`ssh_copy` accepts absolute local and remote paths, rejects globs, traversal,
+directories, and local symbolic links, and never places file contents in model
+context. Uploads and downloads are SHA-256 verified; downloads land through a
+temporary file and are renamed only after verification. The default transfer
+limit is 1 GiB (10 GiB maximum) with a 120-second deadline (900 seconds
+maximum). A successful upload adds one password-free `scp BASENAME DESTINATION`
+entry to the remote SSH user's history; downloads are read-only. For privileged
+destinations, upload to a user-writable staging path and use `ssh_exec` for the
+final install and validation.
 
 Repeated calls to the same host reuse a secured local OpenSSH control socket
 for 60 seconds. This changes transport latency only: commands, results, host

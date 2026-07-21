@@ -8,6 +8,8 @@ import {
   BoundedCapture,
   classifySshFailure,
   connectionReuseEnabled,
+  DEFAULT_TRANSFER_BYTES,
+  DEFAULT_TRANSFER_TIMEOUT_SECONDS,
   DEFAULT_OUTPUT_BYTES,
   DEFAULT_TIMEOUT_SECONDS,
   formatResult,
@@ -15,12 +17,19 @@ import {
   looksLikeRawRemoteTransport,
   normalizeOutputLimit,
   normalizeTimeout,
+  normalizeTransferLimit,
+  normalizeTransferTimeout,
+  remoteFileMetadataCommand,
   remoteHistoryEnabled,
   remoteProgram,
+  remoteTransferHistoryCommand,
   sanitizeTerminalText,
+  scpArgs,
   sshArgs,
   truncateOutput,
   validateHost,
+  validateLocalPath,
+  validateRemotePath,
 } from "../extensions/ssh-direct/core.js";
 
 test("literal SSH aliases are accepted and shell-shaped hosts are rejected", () => {
@@ -53,6 +62,48 @@ test("SSH connection reuse is opt-out and adds only client control options", () 
   assert.ok(args.includes("ControlPersist=60"));
   assert.ok(args.includes("ControlPath=/tmp/pi-ssh-1000/%C"));
   assert.throws(() => sshArgs("app01", { controlPath: "" }), /controlPath/);
+});
+
+test("SCP argv supports one explicit upload or download without shell parsing", () => {
+  const upload = scpArgs("app01", "upload", "/work/build.tgz", "/tmp/build.tgz", {
+    controlPath: "/tmp/pi-ssh-1000/%C",
+  });
+  assert.deepEqual(upload.slice(-2), ["/work/build.tgz", "app01:/tmp/build.tgz"]);
+  assert.ok(upload.includes("-B"));
+  assert.ok(upload.includes("BatchMode=yes"));
+  assert.ok(upload.includes("ClearAllForwardings=yes"));
+  assert.ok(upload.includes("ControlPath=/tmp/pi-ssh-1000/%C"));
+
+  const download = scpArgs("operator@app01", "download", "/work/report.txt", "/var/tmp/report.txt");
+  assert.deepEqual(download.slice(-2), ["operator@app01:/var/tmp/report.txt", "/work/report.txt"]);
+  assert.throws(() => scpArgs("app01", "recursive", "/work/a", "/tmp/a"), /direction/);
+  assert.throws(() => validateLocalPath("relative.txt"), /absolute/);
+  for (const remote of ["relative", "/tmp/../etc/passwd", "/tmp/*.conf", "/tmp/a b"] ) {
+    assert.throws(() => validateRemotePath(remote));
+  }
+});
+
+test("remote transfer metadata and sanitized upload history are deterministic", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pi-copy-history-"));
+  const file = join(home, "payload.txt");
+  const history = join(home, ".bash_history");
+  await writeFile(file, "payload\n");
+  try {
+    const metadataCommand = remoteFileMetadataCommand(file);
+    assert.match(metadataCommand, /stat -Lc %s/);
+    assert.match(metadataCommand, /sha256sum/);
+    assert.match(metadataCommand, /printf 'size=%s/);
+
+    const historyResult = spawnSync("bash", ["-se"], {
+      input: remoteTransferHistoryCommand("/work/payload.txt", file),
+      encoding: "utf8", env: { ...process.env, HOME: home, HISTFILE: history },
+    });
+    assert.equal(historyResult.status, 0, historyResult.stderr);
+    assert.equal(await readFile(history, "utf8"), `scp payload.txt ${file}\n`);
+    assert.equal(remoteTransferHistoryCommand("/work/secret-token.txt", file), "");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("SSH failures distinguish transport faults from remote command exits", () => {
@@ -169,6 +220,10 @@ test("limits have bounded defaults and reject widening", () => {
   assert.equal(normalizeOutputLimit(undefined), DEFAULT_OUTPUT_BYTES);
   assert.throws(() => normalizeTimeout(121));
   assert.throws(() => normalizeOutputLimit(32769));
+  assert.equal(normalizeTransferTimeout(undefined), DEFAULT_TRANSFER_TIMEOUT_SECONDS);
+  assert.equal(normalizeTransferLimit(undefined), DEFAULT_TRANSFER_BYTES);
+  assert.throws(() => normalizeTransferTimeout(901));
+  assert.throws(() => normalizeTransferLimit(10 * 1024 * 1024 * 1024 + 1));
 });
 
 test("large output retains a bounded head and tail with an explicit marker", () => {
