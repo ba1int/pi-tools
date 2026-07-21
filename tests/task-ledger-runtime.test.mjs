@@ -127,6 +127,49 @@ test("runtime archives completed checkpoints and retrieves them through natural 
   }
 });
 
+test("a checkpoint survives an abrupt writer loss before settlement", async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), "pi-handoff-abrupt-"));
+  const previous = {
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+    ZELLIJ_SESSION_NAME: process.env.ZELLIJ_SESSION_NAME,
+    ZELLIJ_PANE_ID: process.env.ZELLIJ_PANE_ID,
+    PI_SIDE_TASK_FLOAT: process.env.PI_SIDE_TASK_FLOAT,
+  };
+  process.env.XDG_STATE_HOME = stateHome;
+  process.env.ZELLIJ_SESSION_NAME = "ops";
+  process.env.ZELLIJ_PANE_ID = "terminal_11";
+  delete process.env.PI_SIDE_TASK_FLOAT;
+
+  try {
+    const { handlers, tools, ctx } = harness();
+    await handlers.get("session_start")({}, ctx);
+    await handlers.get("input")({
+      source: "interactive",
+      text: "Repair the dc2 satellite certificate chain.",
+    }, ctx);
+    await handlers.get("agent_start")({}, ctx);
+    await tools.get("ops_checkpoint").execute("checkpoint-1", {
+      state: "blocked",
+      subject: "dc2-sat01",
+      note: "Intermediate CA is missing; no certificate change attempted",
+    });
+    // Deliberately omit agent_settled and session_shutdown: this is the crash boundary.
+    const result = await tools.get("handoff_lookup").execute("lookup-1", {
+      query: "dc2-sat01 certificate",
+      all_workspaces: false,
+    });
+    assert.equal(result.details.matches, 1);
+    assert.match(result.content[0].text, /State: BLOCKED/);
+    assert.match(result.content[0].text, /Intermediate CA is missing/);
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    rmSync(stateHome, { recursive: true, force: true });
+  }
+});
+
 test("normal conversational follow-ups preserve the active project checkpoint set", async () => {
   const stateHome = mkdtempSync(join(tmpdir(), "pi-ledger-project-"));
   const previous = {
@@ -355,16 +398,23 @@ test("three concurrent pane writers retain independent task records", async () =
   try {
     const agents = ["terminal_1", "terminal_2", "terminal_3"].map((paneId) => {
       process.env.ZELLIJ_PANE_ID = paneId;
-      return { paneId, ...harness() };
+      const agent = harness();
+      agent.ctx.sessionManager.getSessionId = () => `runtime-session-${paneId}`;
+      return { paneId, ...agent };
     });
 
-    await Promise.all(agents.map(async ({ paneId, handlers, ctx }) => {
+    await Promise.all(agents.map(async ({ paneId, handlers, tools, ctx }) => {
       await handlers.get("session_start")({}, ctx);
       await handlers.get("input")({
         source: "interactive",
         text: `Investigate task in ${paneId}.`,
       }, ctx);
       await handlers.get("agent_start")({}, ctx);
+      await tools.get("ops_checkpoint").execute(`checkpoint-${paneId}`, {
+        state: "working",
+        subject: paneId,
+        note: `Independent checkpoint for ${paneId}`,
+      });
     }));
 
     const snapshots = agents.map(({ paneId }) => {
@@ -388,6 +438,11 @@ test("three concurrent pane writers retain independent task records", async () =
       "Investigate task in terminal_2.",
       "Investigate task in terminal_3.",
     ]);
+    const lookup = await agents[0].tools.get("handoff_lookup").execute("lookup-all", {
+      query: "Independent checkpoint",
+      all_workspaces: false,
+    });
+    assert.equal(lookup.details.matches, 3);
   } finally {
     for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[name];
