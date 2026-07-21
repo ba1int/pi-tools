@@ -153,6 +153,23 @@ test("remote commands are sent as Bash stdin programs", () => {
   assert.throws(() => remoteProgram("\0"));
 });
 
+test("nested Bash heredocs receive their own history tracer without instrumenting data heredocs", () => {
+  const nested = remoteProgram(`sudo /bin/bash <<'ROOT'
+for n in 1 2; do
+  group="testgroup\${n}"
+  groupadd "$group"
+done
+ROOT`);
+  assert.match(nested, /__pi_history_owner=.*SUDO_USER/);
+  assert.match(nested, /__pi_history_prefix='sudo '/);
+  assert.equal((nested.match(/__pi_history_start \|\| true/g) ?? []).length, 2);
+
+  const data = remoteProgram(`cat > "$HOME/example" <<'EOF'
+hello
+EOF`);
+  assert.equal((data.match(/__pi_history_start \|\| true/g) ?? []).length, 1);
+});
+
 test("remote history recording is opt-out", () => {
   assert.equal(remoteHistoryEnabled(undefined), true);
   assert.equal(remoteHistoryEnabled("1"), true);

@@ -13,6 +13,8 @@ const REMOTE_HISTORY_PRELUDE = String.raw`__pi_history_file=${SHELL_DOLLAR}{HIST
 __pi_history_guard=0
 __pi_history_edit_cache='|'
 __pi_history_line_cache=''
+__pi_history_prefix=''
+: >> "$__pi_history_file" 2>/dev/null || true
 __pi_history_python_edit() {
   local __pi_edit_cmd="$1" __pi_rest __pi_match __pi_path __pi_paths='' __pi_seen='|'
   local __pi_path_re="['\"](/(etc|home|opt|root|srv|usr|var)/[^'\"[:space:]]+)['\"]"
@@ -105,13 +107,13 @@ __pi_history_record() {
     'grep -q .'|'grep -q . '*|"grep -q '.'"|"grep -q '.' "*) return 0 ;;
   esac
 
-  local __pi_mutation_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sed|perl)[[:space:]]+-[^[:space:]]*i|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?systemctl[[:space:]]+(daemon-reload|daemon-reexec|restart|reload|stop|start|enable|disable|mask|unmask)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?service[[:space:]]+[^[:space:]]+[[:space:]]+(restart|reload|stop|start)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(apt|apt-get|aptitude|dnf|yum|zypper|dpkg|rpm)[[:space:]]+(install|remove|purge|upgrade|full-upgrade|dist-upgrade|update|erase|-i|-U|-e|--install|--remove|--purge|--upgrade|--erase)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(docker|podman)([[:space:]]+compose)?[[:space:]]+(build|create|down|kill|pause|pull|push|restart|rm|rmi|run|start|stop|unpause|update|up)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(kubectl[[:space:]]+(apply|create|delete|drain|edit|label|annotate|patch|replace|rollout|scale|set|taint|cordon|uncordon)|helm[[:space:]]+(install|upgrade|uninstall|rollback))([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(useradd|usermod|userdel|groupadd|groupmod|groupdel|mount|umount|swapon|swapoff|crontab)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sysctl[[:space:]]+-w|iptables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|ip6tables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|nft[[:space:]]+(add|delete|insert|replace|flush|reset|import|-f)|ufw[[:space:]]+(enable|disable|allow|deny|reject|limit|delete|reset|reload|route)|firewall-cmd[[:space:]]+--(add|remove|reload|complete-reload|set|new|delete))|(^|[;&|][[:space:]]*)(git[[:space:]]+(add|commit|checkout|switch|merge|rebase|reset|pull|push|restore|clean|cherry-pick|tag)|ansible-playbook)([[:space:]]|$)'
+  local __pi_mutation_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sed|perl)[[:space:]]+-[^[:space:]]*i|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?systemctl[[:space:]]+(daemon-reload|daemon-reexec|restart|reload|stop|start|enable|disable|mask|unmask)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?service[[:space:]]+[^[:space:]]+[[:space:]]+(restart|reload|stop|start)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(apt|apt-get|aptitude|dnf|yum|zypper|dpkg|rpm)[[:space:]]+(install|remove|purge|upgrade|full-upgrade|dist-upgrade|update|erase|-i|-U|-e|--install|--remove|--purge|--upgrade|--erase)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(docker|podman)([[:space:]]+compose)?[[:space:]]+(build|create|down|kill|pause|pull|push|restart|rm|rmi|run|start|stop|unpause|update|up)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(kubectl[[:space:]]+(apply|create|delete|drain|edit|label|annotate|patch|replace|rollout|scale|set|taint|cordon|uncordon)|helm[[:space:]]+(install|upgrade|uninstall|rollback))([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(useradd|usermod|userdel|groupadd|groupmod|groupdel|passwd|chpasswd|chage|mount|umount|swapon|swapoff|crontab)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sysctl[[:space:]]+-w|iptables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|ip6tables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|nft[[:space:]]+(add|delete|insert|replace|flush|reset|import|-f)|ufw[[:space:]]+(enable|disable|allow|deny|reject|limit|delete|reset|reload|route)|firewall-cmd[[:space:]]+--(add|remove|reload|complete-reload|set|new|delete))|(^|[;&|][[:space:]]*)(git[[:space:]]+(add|commit|checkout|switch|merge|rebase|reset|pull|push|restore|clean|cherry-pick|tag)|ansible-playbook)([[:space:]]|$)'
   local __pi_redirect_re='(^|[[:space:]])[0-9]*>>?[[:space:]]*([^&[:space:]]+)'
 
   # Capture by default. Only discard shell bookkeeping that adds no useful
   # operator context; durable redirects are still treated as file changes.
   case $__pi_head in
-    :|true|false|"["|"[["|test|return|exit|break|continue|shift|wait|trap|set|shopt|umask|local|declare|typeset|readonly|export|unset|read|mapfile|sleep|command|builtin|type|hash|eval|echo|printf)
+    :|true|false|"["|"[["|test|for|while|until|if|then|else|elif|fi|case|esac|select|do|done|function|return|exit|break|continue|shift|wait|trap|set|shopt|umask|local|declare|typeset|readonly|export|unset|read|mapfile|sleep|command|builtin|type|hash|eval|echo|printf)
       if [[ $__pi_cmd =~ $__pi_redirect_re ]]; then
         case ${SHELL_DOLLAR}{BASH_REMATCH[2]} in
           /dev/null|/dev/stdout|/dev/stderr) return 0 ;;
@@ -180,6 +182,12 @@ __pi_history_record() {
     elif [[ -z $__pi_line ]]; then
       return 0
     fi
+    if [[ $__pi_kind == mutation && -n ${SHELL_DOLLAR}{__pi_history_prefix:-} ]]; then
+      case $__pi_line in
+        sudo\ *|sudoedit\ *) ;;
+        *) __pi_line="$__pi_history_prefix$__pi_line" ;;
+      esac
+    fi
     [[ -n $__pi_line && ${SHELL_DOLLAR}{#__pi_line} -le 8192 ]] || return 0
     __pi_line_key=$'\n'"$__pi_line"$'\n'
     [[ $'\n'"$__pi_history_line_cache" == *"$__pi_line_key"* ]] && return 0
@@ -189,7 +197,67 @@ __pi_history_record() {
     __pi_history_guard=0
   fi
 }
-trap '__pi_history_record "$BASH_COMMAND"' DEBUG
+
+__pi_history_trace_filter() {
+  local __pi_trace __pi_source __pi_expanded __pi_candidate __pi_vars __pi_var __pi_unsafe
+  while IFS= read -r __pi_trace; do
+    case $__pi_trace in
+      *'+PI_SRC='*'|PI_EXP= '*) ;;
+      *) continue ;;
+    esac
+    __pi_source=${SHELL_DOLLAR}{__pi_trace#*+PI_SRC=}
+    __pi_expanded=${SHELL_DOLLAR}{__pi_source#*|PI_EXP= }
+    __pi_source=${SHELL_DOLLAR}{__pi_source%%|PI_EXP= *}
+    case $__pi_expanded in
+      __pi_src=*|__pi_history_*) continue ;;
+    esac
+
+    __pi_candidate=$__pi_expanded
+    __pi_unsafe=0
+    __pi_vars=$__pi_source
+    [[ $__pi_vars == *'$('* ]] && __pi_unsafe=1
+    while [[ $__pi_vars =~ \$\{?([A-Za-z_][A-Za-z0-9_]*)\}? ]]; do
+      __pi_var=${SHELL_DOLLAR}{BASH_REMATCH[1]}
+      case $__pi_var in
+        n|user|username|group|host|hostname|service|unit|name|path|file|dir|package|version|port|HOME|SUDO_USER) ;;
+        *) __pi_unsafe=1 ;;
+      esac
+      __pi_vars=${SHELL_DOLLAR}{__pi_vars#*"${SHELL_DOLLAR}{BASH_REMATCH[0]}"}
+    done
+    (( __pi_unsafe == 0 )) || __pi_candidate=$__pi_source
+    if [[ $__pi_source == *'>'* ]]; then
+      __pi_candidate=$__pi_source
+    fi
+    __pi_history_record "$__pi_candidate"
+  done
+}
+
+__pi_history_finish() {
+  local __pi_status=${SHELL_DOLLAR}{1:-0}
+  set +x
+  trap - DEBUG EXIT
+  if [[ ${SHELL_DOLLAR}{BASH_XTRACEFD:-} == 19 ]]; then
+    unset BASH_XTRACEFD
+    exec 19>&-
+    [[ -z ${SHELL_DOLLAR}{__pi_history_trace_pid:-} ]] || wait "$__pi_history_trace_pid" 2>/dev/null || true
+  fi
+  return "$__pi_status"
+}
+
+__pi_history_start() {
+  if (( BASH_VERSINFO[0] < 4 )); then
+    trap '__pi_history_record "$BASH_COMMAND"' DEBUG
+    return 0
+  fi
+  exec 19> >(__pi_history_trace_filter)
+  __pi_history_trace_pid=$!
+  BASH_XTRACEFD=19
+  __pi_src=''
+  trap '__pi_src=$BASH_COMMAND' DEBUG
+  PS4='+PI_SRC=${SHELL_DOLLAR}{__pi_src}|PI_EXP= '
+  trap '__pi_history_status=$?; __pi_history_finish "$__pi_history_status"; exit "$__pi_history_status"' EXIT
+  set -x
+}
 `;
 
 const HOST_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,252}|[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,252})$/;
@@ -436,7 +504,33 @@ export function remoteProgram(command, { recordHistory = true } = {}) {
   const hintPrelude = pythonHint
     ? `__pi_history_python_hint=${shellSingleQuote(pythonHint)}\n`
     : "";
-  return `${prelude}${hintPrelude}set -o pipefail\n${validated}\n`;
+  const executable = recordHistory ? instrumentNestedBashHeredocs(validated) : validated;
+  const historyStart = recordHistory ? "__pi_history_start || true\n" : "";
+  return `${prelude}${hintPrelude}set -o pipefail\n${historyStart}${executable}\n`;
+}
+
+function nestedHistoryPrelude({ privileged }) {
+  if (!privileged) return `${REMOTE_HISTORY_PRELUDE}__pi_history_start || true`;
+  const nestedHeader = String.raw`__pi_history_owner=${SHELL_DOLLAR}{SUDO_USER:-${SHELL_DOLLAR}(id -un)}
+__pi_history_home=${SHELL_DOLLAR}(getent passwd "$__pi_history_owner" 2>/dev/null | cut -d: -f6)
+[[ -n $__pi_history_home ]] || __pi_history_home=$HOME
+__pi_history_file="$__pi_history_home/.bash_history"
+`;
+  const prelude = REMOTE_HISTORY_PRELUDE.replace(/^__pi_history_file=.*\n/, nestedHeader);
+  return `${prelude}__pi_history_prefix='sudo '\n__pi_history_start || true`;
+}
+
+function instrumentNestedBashHeredocs(command) {
+  const lines = command.split("\n");
+  const output = [];
+  const launcher = /^(\s*)(sudo(?:\s+-\S+)*\s+)?(?:\/usr\/bin\/|\/bin\/)?bash(?:\s+[^<\n]*)?\s+<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\3\s*$/;
+  for (const line of lines) {
+    output.push(line);
+    const match = line.match(launcher);
+    if (!match) continue;
+    output.push(nestedHistoryPrelude({ privileged: Boolean(match[2]) }));
+  }
+  return output.join("\n");
 }
 
 export function shellSingleQuote(value) {
