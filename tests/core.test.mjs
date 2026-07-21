@@ -238,6 +238,8 @@ printf '%s\\n' safe > "$HOME/config"
 printf '%s\\n' updated > "$HOME/config"
 printf '%s\\n' staged > "$HOME/config.tmp"
 sudo mv "$HOME/config.tmp" "$HOME/final.conf"
+sudo install "$HOME/config" "$HOME/.atomic.conf.12345"
+sudo mv "$HOME/.atomic.conf.12345" "$HOME/atomic.conf"
 cat "$HOME/config" >/dev/null
 grep -n updated "$HOME/config" >/dev/null
 install "$HOME/config" "$HOME/installed"
@@ -284,6 +286,7 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       'mkdir "$HOME/existing"',
       'vi "$HOME/config"',
       'sudoedit "$HOME/final.conf"',
+      'sudoedit "$HOME/atomic.conf"',
       'cat "$HOME/config" > /dev/null',
       'grep -n updated "$HOME/config" > /dev/null',
       'vi "$HOME/installed"',
