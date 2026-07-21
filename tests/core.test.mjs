@@ -240,6 +240,10 @@ printf '%s\\n' staged > "$HOME/config.tmp"
 sudo mv "$HOME/config.tmp" "$HOME/final.conf"
 sudo install "$HOME/config" "$HOME/.atomic.conf.12345"
 sudo mv "$HOME/.atomic.conf.12345" "$HOME/atomic.conf"
+stage="$HOME/.staged.conf.23456"
+sudo install "$HOME/config" "$stage"
+sudo mv "$stage" "$HOME/staged.conf"
+sudo rm -f "$stage"
 cat "$HOME/config" >/dev/null
 grep -n updated "$HOME/config" >/dev/null
 install "$HOME/config" "$HOME/installed"
@@ -287,6 +291,7 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
       'vi "$HOME/config"',
       'sudoedit "$HOME/final.conf"',
       'sudoedit "$HOME/atomic.conf"',
+      'sudoedit "$HOME/staged.conf"',
       'cat "$HOME/config" > /dev/null',
       'grep -n updated "$HOME/config" > /dev/null',
       'vi "$HOME/installed"',

@@ -75,7 +75,7 @@ __pi_history_file_edit() {
     *) __pi_plain=$__pi_path ;;
   esac
   case $__pi_plain in
-    ''|/dev/null|/dev/stdout|/dev/stderr|/tmp/*|/var/tmp/*|\$B|\$B/*|\$\{B\}|\$\{B\}/*|*'$('*|*.bak|*.bak\"|*.bak\'|*.absent|*.absent\"|*.absent\'|*.tmp|*.tmp\"|*.tmp\'|*.tmp.*|*.tmp.*\"|*.tmp.*\'|*/.*.[0-9][0-9][0-9][0-9]*)
+    ''|/dev/null|/dev/stdout|/dev/stderr|/tmp/*|/var/tmp/*|\$B|\$B/*|\$\{B\}|\$\{B\}/*|\$tmp|\$\{tmp\}|\$stage|\$\{stage\}|*'$('*|*.bak|*.bak\"|*.bak\'|*.absent|*.absent\"|*.absent\'|*.tmp|*.tmp\"|*.tmp\'|*.tmp.*|*.tmp.*\"|*.tmp.*\'|*/.*.[0-9][0-9][0-9][0-9]*)
       __pi_history_rendered=''
       return 0
       ;;
@@ -171,7 +171,7 @@ __pi_history_record() {
     if [[ -n $__pi_history_rendered ]]; then
       :
     elif [[ $__pi_kind != mutation ]] || ! __pi_history_file_edit "$__pi_cmd"; then
-      if [[ $__pi_kind == mutation && ( $__pi_cmd == *'/tmp/'* || $__pi_cmd == *'/var/tmp/'* || $__pi_cmd == *'$B'* || $__pi_cmd == *'${SHELL_DOLLAR}{B}'* ) ]]; then
+      if [[ $__pi_kind == mutation && ( $__pi_cmd == *'/tmp/'* || $__pi_cmd == *'/var/tmp/'* || $__pi_cmd == *'$B'* || $__pi_cmd == *'${SHELL_DOLLAR}{B}'* || $__pi_cmd == *'$tmp'* || $__pi_cmd == *'${SHELL_DOLLAR}{tmp}'* || $__pi_cmd == *'$stage'* || $__pi_cmd == *'${SHELL_DOLLAR}{stage}'* || $__pi_cmd == *'/.'*'.'[0-9][0-9][0-9][0-9]* ) ]]; then
         return 0
       fi
       __pi_line=${SHELL_DOLLAR}{__pi_cmd//$'\r'/}
@@ -227,7 +227,7 @@ __pi_history_trace_filter() {
     while [[ $__pi_vars =~ \$\{?([A-Za-z_][A-Za-z0-9_]*)\}? ]]; do
       __pi_var=${SHELL_DOLLAR}{BASH_REMATCH[1]}
       case $__pi_var in
-        n|u|g|user|username|group|host|hostname|service|unit|name|path|file|dir|src|tmp|dst|dest|target|package|version|port|HOME|SUDO_USER) ;;
+        n|u|g|user|username|group|host|hostname|service|unit|name|path|file|dir|src|tmp|stage|staging|dst|dest|target|package|version|port|HOME|SUDO_USER) ;;
         *) __pi_unsafe=1 ;;
       esac
       __pi_vars=${SHELL_DOLLAR}{__pi_vars#*"${SHELL_DOLLAR}{BASH_REMATCH[0]}"}
