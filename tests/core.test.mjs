@@ -221,6 +221,7 @@ printf '%s\n' alpha beta | sort -u | head -n 1 >/dev/null
 python3 - <<'PY'
 print('read only')
 PY
+printf '' | python3 -
 head -n 1 "$HOME/config" >/dev/null || true
 pgrep -af icinga >/dev/null || true
 ps -ef >/dev/null

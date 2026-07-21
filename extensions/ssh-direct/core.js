@@ -154,7 +154,7 @@ __pi_history_record() {
   __pi_kind='observation'
   if __pi_history_python_edit "$__pi_cmd"; then
     __pi_kind='mutation'
-  elif [[ $__pi_head == python || $__pi_head == python3 || $__pi_head == python3.* ]] && [[ $__pi_cmd == *'<<'* ]]; then
+  elif [[ $__pi_head == python || $__pi_head == python3 || $__pi_head == python3.* ]] && [[ $__pi_cmd == *'<<'* || $__pi_cmd == "$__pi_head -" ]]; then
     # The one-line heredoc launcher is not replayable. Mutating Python heredocs
     # were already projected above as vi/sudoedit entries.
     return 0
