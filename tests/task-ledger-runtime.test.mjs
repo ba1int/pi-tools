@@ -72,6 +72,59 @@ test("checkpoint prompt guidance names the tool in every flat guideline", () => 
   assert.match(checkpoint.promptGuidelines[0], /exact acceptance contract/);
   assert.equal(checkpoint.parameters.properties.state["~kind"], "String");
   assert.match(checkpoint.parameters.properties.state.description, /blocked.*waiting/);
+  const handoff = tools.get("handoff_lookup");
+  assert.ok(handoff);
+  assert.equal(
+    handoff.promptGuidelines.every((guideline) => guideline.includes("handoff_lookup")),
+    true,
+  );
+  assert.match(handoff.promptGuidelines[0], /automatically/);
+});
+
+test("runtime archives completed checkpoints and retrieves them through natural tool use", async () => {
+  const stateHome = mkdtempSync(join(tmpdir(), "pi-handoff-runtime-"));
+  const previous = {
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME,
+    ZELLIJ_SESSION_NAME: process.env.ZELLIJ_SESSION_NAME,
+    ZELLIJ_PANE_ID: process.env.ZELLIJ_PANE_ID,
+    PI_SIDE_TASK_FLOAT: process.env.PI_SIDE_TASK_FLOAT,
+  };
+  process.env.XDG_STATE_HOME = stateHome;
+  process.env.ZELLIJ_SESSION_NAME = "ops";
+  process.env.ZELLIJ_PANE_ID = "terminal_10";
+  delete process.env.PI_SIDE_TASK_FLOAT;
+
+  try {
+    const { handlers, tools, ctx } = harness();
+    await handlers.get("session_start")({}, ctx);
+    await handlers.get("input")({
+      source: "interactive",
+      text: "Upgrade uat-web01 and validate Icinga before rollout.",
+    }, ctx);
+    await handlers.get("agent_start")({}, ctx);
+    await tools.get("ops_checkpoint").execute("checkpoint-1", {
+      state: "done",
+      subject: "uat-web01",
+      note: "Canary OS, containers, and Icinga checks validated",
+    });
+    await handlers.get("agent_settled")({}, ctx);
+
+    const result = await tools.get("handoff_lookup").execute("lookup-1", {
+      query: "uat-web01 Icinga rollout",
+      all_workspaces: false,
+    });
+    assert.equal(result.details.matches, 1);
+    assert.equal(result.details.requiresRevalidation, false);
+    assert.match(result.content[0].text, /State: COMPLETE/);
+    assert.match(result.content[0].text, /Canary OS, containers, and Icinga checks validated/);
+    assert.match(result.content[0].text, /Never infer approval/);
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    rmSync(stateHome, { recursive: true, force: true });
+  }
 });
 
 test("normal conversational follow-ups preserve the active project checkpoint set", async () => {

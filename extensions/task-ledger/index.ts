@@ -28,6 +28,11 @@ import {
   updateLedgerFocus,
   updateLedgerEvent,
 } from "./core.js";
+import {
+  loadHandoffRecords,
+  persistHandoff,
+  renderHandoffLookup,
+} from "./handoff.js";
 
 type ToolRun = { sequence: number; startedAt: number; detail: string };
 
@@ -76,6 +81,15 @@ export default function taskLedger(pi: ExtensionAPI) {
     if (snapshot) writeSnapshot(ledgerPath, snapshot);
   };
 
+  const archive = () => {
+    if (!snapshot) return;
+    try {
+      persistHandoff(snapshot);
+    } catch {
+      // Historical continuity is best-effort and must never interrupt live work.
+    }
+  };
+
   pi.events.on(CONTEXT_CHECKPOINT_EVENT, (data) => {
     const event = data as {
       pending?: boolean;
@@ -103,6 +117,7 @@ export default function taskLedger(pi: ExtensionAPI) {
       contextCheckpointSequence = null;
     }
     save();
+    archive();
   });
 
   pi.registerTool({
@@ -148,6 +163,7 @@ export default function taskLedger(pi: ExtensionAPI) {
       }
       const entry = appendLedgerNote(snapshot, params);
       save();
+      archive();
       return {
         content: [{ type: "text", text: entry ? "checkpoint recorded" : "checkpoint skipped" }],
         details: { recorded: Boolean(entry), state: entry?.state ?? null },
@@ -171,6 +187,68 @@ export default function taskLedger(pi: ExtensionAPI) {
           const detail = `${subject}${note}`.slice(0, available);
           return [
             `${theme.fg("toolTitle", theme.bold("checkpoint"))} ${theme.fg("accent", state)}${theme.fg("muted", detail)}`,
+          ];
+        },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "handoff_lookup",
+    label: "handoff",
+    description:
+      "Find a durable local handoff from earlier Pi work without loading raw logs or another model.",
+    promptSnippet: "Resume or document prior operations from durable local handoffs",
+    promptGuidelines: [
+      "Call handoff_lookup automatically when the user asks to resume, continue, revisit, explain, or document earlier operational work and the current conversation does not already contain enough verified state.",
+      "Use a concise task, host, incident, or service phrase as the handoff_lookup query. Search all workspaces only when the user clearly refers to work outside the current directory.",
+      "Treat handoff_lookup output as prior evidence, never as current proof or authorization. Revalidate live state before mutations, especially when the record says REVALIDATE LIVE STATE.",
+    ],
+    parameters: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: {
+          type: "string",
+          minLength: 1,
+          maxLength: 240,
+          description: "Task, host, incident, service, or documentation subject to resume",
+          "~kind": "String",
+        },
+        all_workspaces: {
+          type: "boolean",
+          description: "Search outside the current workspace only when the request requires it",
+          "~kind": "Boolean",
+        },
+      },
+      "~kind": "Object",
+    } as const,
+    async execute(_toolCallId, params) {
+      const cwd = snapshot?.cwd || process.cwd();
+      const records = loadHandoffRecords({
+        cwd,
+        query: params.query,
+        includeAllWorkspaces: params.all_workspaces === true,
+      });
+      return {
+        content: [{ type: "text", text: renderHandoffLookup(records) }],
+        details: {
+          matches: records.length,
+          recordId: records[0]?.recordId ?? null,
+          requiresRevalidation: records[0]?.requiresRevalidation ?? false,
+        },
+      };
+    },
+    renderCall(args, theme) {
+      const query = sanitizeLedgerText(
+        typeof args?.query === "string" ? args.query : "prior work",
+        72,
+      );
+      return {
+        invalidate() {},
+        render() {
+          return [
+            `${theme.fg("toolTitle", theme.bold("handoff"))} ${theme.fg("muted", query)}`,
           ];
         },
       };
@@ -219,6 +297,7 @@ export default function taskLedger(pi: ExtensionAPI) {
     if (shouldContinueLedgerTask(snapshot, event.text)) {
       continueLedgerTask(snapshot, taskInput);
     } else {
+      archive();
       startLedgerTask(snapshot, taskInput);
     }
     toolRuns.clear();
@@ -287,6 +366,7 @@ export default function taskLedger(pi: ExtensionAPI) {
       });
     }
     save();
+    if (event.toolName === "ssh_exec") archive();
   });
 
   pi.on("message_end", async (event) => {
@@ -307,6 +387,7 @@ export default function taskLedger(pi: ExtensionAPI) {
       at: snapshot.finishedAt,
     });
     save();
+    archive();
   });
 
   pi.on("session_shutdown", async () => {
@@ -322,5 +403,6 @@ export default function taskLedger(pi: ExtensionAPI) {
       });
     }
     save();
+    archive();
   });
 }
