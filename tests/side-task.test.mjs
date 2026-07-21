@@ -223,9 +223,9 @@ test("package and installer expose the repository-owned side-task extension", as
     new URL("../extensions/side-task/index.ts", import.meta.url),
     "utf8",
   );
-  assert.ok(packageJson.pi.extensions.includes("./extensions/side-task/index.ts"));
-  assert.match(installer, /ssh-direct\|thinking-router\|context-sentinel\|side-task\|task-ledger/);
-  assert.match(installer, /extensions\/side-task/);
+  assert.ok(!packageJson.pi.extensions.includes("./extensions/side-task/index.ts"));
+  assert.match(installer, /ops\) enabled_extensions=.*side-task task-ledger/);
+  assert.match(installer, /extensions\/\$extension_name/);
   assert.match(extension, /registerCommand\("btw"/);
   assert.match(extension, /registerCommand\("aside"/);
   assert.doesNotMatch(extension, /waitForIdle/);

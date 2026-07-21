@@ -209,11 +209,24 @@ Node.js 22.19 or newer is required.
 
 The installer pins Pi to `pi-version.txt`, removes every configured third-party
 Pi package, retires every other global extension into a timestamped backup,
-links the repository-owned extensions, task-ledger viewer, and generic incident
-skill, installs paired Protocol Paper/Ink Pi themes that follow the terminal's
-reported light/dark appearance, and merges the repository-owned Sol context
-budget. It preserves authentication, sessions, unrelated model
+selects Luna at low thinking, links the measured `ssh-direct` core plus
+appearance synchronization and the generic incident skill, installs paired
+Protocol Paper/Ink Pi themes that follow the terminal's reported light/dark
+appearance, and merges the repository-owned Sol context budget. It preserves
+authentication, sessions, unrelated model
 configuration, and all other skills.
+
+The default `core` profile is deliberately small. Optional tools remain
+available without changing the repository:
+
+```sh
+PI_TOOLS_PROFILE=ops ./install.sh   # add /btw and the task ledger
+PI_TOOLS_PROFILE=full ./install.sh  # add experimental router + sentinel too
+```
+
+`core` is the benchmark-backed workstation default. `ops` adds local interface
+features but no model routing. `full` is for experiments and is not the
+recommended daily-driver profile.
 
 The repository-owned `study-learn-emit` extension is also preserved when the
 separate Study Room package is present, allowing both modular installers to be

@@ -12,10 +12,6 @@ test("package exposes the owned incident skill", async () => {
   assert.deepEqual(manifest.pi.extensions, [
     "./extensions/appearance-sync/index.ts",
     "./extensions/ssh-direct/index.ts",
-    "./extensions/thinking-router/index.ts",
-    "./extensions/context-sentinel/index.ts",
-    "./extensions/side-task/index.ts",
-    "./extensions/task-ledger/index.ts",
   ]);
 });
 
@@ -38,10 +34,10 @@ test("installer links the incident skill without retiring domain skills", async 
     /skills\/incident-investigation"[\s\\\n]+"\$agent_dir\/skills\/incident-investigation"/,
   );
   assert.doesNotMatch(installer, /for skill_path in/);
-  assert.match(installer, /extensions\/appearance-sync" "\$extensions_dir\/appearance-sync"/);
-  assert.match(installer, /extensions\/thinking-router" "\$extensions_dir\/thinking-router"/);
-  assert.match(installer, /appearance-sync\|ssh-direct\|thinking-router\|context-sentinel\|side-task\|task-ledger\|study-learn-emit\) continue/);
-  assert.match(installer, /extensions\/task-ledger" "\$extensions_dir\/task-ledger"/);
+  assert.match(installer, /core\) enabled_extensions='appearance-sync ssh-direct'/);
+  assert.match(installer, /ops\) enabled_extensions='appearance-sync ssh-direct side-task task-ledger'/);
+  assert.match(installer, /full\) enabled_extensions='appearance-sync ssh-direct thinking-router context-sentinel side-task task-ledger'/);
+  assert.match(installer, /for extension_name in \$enabled_extensions/);
   assert.match(installer, /bin\/pi-ledger" "\$npm_prefix\/bin\/pi-ledger"/);
   assert.match(installer, /patch-pi-inline-compaction\.mjs/);
 });
@@ -61,4 +57,6 @@ test("installer applies the repository-owned Sol context budget", async () => {
   assert.match(installer, /merge\(models, fragment\)/);
   assert.match(installer, /reserveTokens: 68000/);
   assert.match(installer, /keepRecentTokens: 20000/);
+  assert.match(installer, /settings\.defaultModel = 'gpt-5\.6-luna'/);
+  assert.match(installer, /settings\.defaultThinkingLevel = 'low'/);
 });

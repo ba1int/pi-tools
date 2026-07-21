@@ -7,6 +7,24 @@ npm_prefix=${PI_NPM_PREFIX:-"$HOME/.local"}
 stamp=$(date '+%Y%m%d-%H%M%S')
 pi_version=$(sed -n '1p' "$repo_root/pi-version.txt")
 pi_command="$npm_prefix/bin/pi"
+profile=${PI_TOOLS_PROFILE:-core}
+
+case $profile in
+    core) enabled_extensions='appearance-sync ssh-direct' ;;
+    ops) enabled_extensions='appearance-sync ssh-direct side-task task-ledger' ;;
+    full) enabled_extensions='appearance-sync ssh-direct thinking-router context-sentinel side-task task-ledger' ;;
+    *)
+        printf 'error   unknown PI_TOOLS_PROFILE: %s (use core, ops, or full)\n' "$profile" >&2
+        exit 2
+        ;;
+esac
+
+extension_enabled() {
+    case " $enabled_extensions " in
+        *" $1 "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
     printf 'error   Node.js 22.19+ and npm are required\n' >&2
@@ -67,9 +85,9 @@ mkdir -p "$extensions_dir"
 set +f
 for extension_path in "$extensions_dir"/*; do
     [ -e "$extension_path" ] || [ -L "$extension_path" ] || continue
-    case "$(basename -- "$extension_path")" in
-        appearance-sync|ssh-direct|thinking-router|context-sentinel|side-task|task-ledger|study-learn-emit) continue ;;
-    esac
+    extension_name=$(basename -- "$extension_path")
+    [ "$extension_name" = study-learn-emit ] && continue
+    extension_enabled "$extension_name" && continue
     mkdir -p "$retired_dir"
     mv "$extension_path" "$retired_dir/"
     printf 'retire  %s -> %s/\n' "$extension_path" "$retired_dir"
@@ -94,13 +112,12 @@ link_path() {
     printf 'link    %s -> %s\n' "$target_path" "$source_path"
 }
 
-link_path "$repo_root/extensions/ssh-direct" "$extensions_dir/ssh-direct"
-link_path "$repo_root/extensions/appearance-sync" "$extensions_dir/appearance-sync"
-link_path "$repo_root/extensions/thinking-router" "$extensions_dir/thinking-router"
-link_path "$repo_root/extensions/context-sentinel" "$extensions_dir/context-sentinel"
-link_path "$repo_root/extensions/side-task" "$extensions_dir/side-task"
-link_path "$repo_root/extensions/task-ledger" "$extensions_dir/task-ledger"
-link_path "$repo_root/bin/pi-ledger" "$npm_prefix/bin/pi-ledger"
+for extension_name in $enabled_extensions; do
+    link_path "$repo_root/extensions/$extension_name" "$extensions_dir/$extension_name"
+done
+if extension_enabled task-ledger; then
+    link_path "$repo_root/bin/pi-ledger" "$npm_prefix/bin/pi-ledger"
+fi
 link_path "$repo_root/skills/incident-investigation" \
     "$agent_dir/skills/incident-investigation"
 link_path "$repo_root/themes/protocol-ink.json" "$agent_dir/themes/protocol-ink.json"
@@ -115,6 +132,9 @@ let settings = {};
 if (fs.existsSync(settingsPath)) settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
 settings.theme = 'protocol-paper/protocol-ink';
 settings.externalEditor = 'nvim';
+settings.defaultProvider = 'openai-codex';
+settings.defaultModel = 'gpt-5.6-luna';
+settings.defaultThinkingLevel = 'low';
 settings.compaction = {
   ...(settings.compaction && typeof settings.compaction === 'object'
     ? settings.compaction
@@ -157,5 +177,7 @@ mv "$temporary_models" "$models_path"
 chmod 0600 "$models_path"
 printf 'merge   %s\n' "$models_path"
 
-printf '\nPi is calibrated with repository-owned tools and reasoning skills only.\n'
+printf '\nPi profile: %s (%s)\n' "$profile" "$enabled_extensions"
+printf 'Default model: openai-codex/gpt-5.6-luna · low\n'
+printf 'Pi is calibrated with repository-owned tools and reasoning skills only.\n'
 printf 'Authentication, sessions, custom models, and domain skills remain machine-local.\n'
