@@ -206,6 +206,17 @@ __pi_history_record() {
   fi
 }
 
+__pi_history_source_expansion_safe() {
+  local __pi_source_cmd="$1"
+  local __pi_safe_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|groupadd|groupmod|groupdel|useradd|usermod|userdel|chage|getent|id|stat|systemctl|service)([[:space:]]|$)'
+  [[ $__pi_source_cmd =~ $__pi_safe_re ]] || return 1
+  [[ $__pi_source_cmd == *chpasswd* ]] && return 1
+  if [[ $__pi_source_cmd =~ (^|[[:space:]])(useradd|usermod)([[:space:]].*)?[[:space:]](-p|--password)([=[:space:]]|$) ]]; then
+    return 1
+  fi
+  return 0
+}
+
 __pi_history_trace_filter() {
   local __pi_trace __pi_source __pi_expanded __pi_candidate __pi_vars __pi_var __pi_unsafe
   while IFS= read -r __pi_trace; do
@@ -223,15 +234,18 @@ __pi_history_trace_filter() {
     __pi_candidate=$__pi_expanded
     __pi_unsafe=0
     __pi_vars=$__pi_source
-    [[ $__pi_vars == *'$('* ]] && __pi_unsafe=1
-    while [[ $__pi_vars =~ \$\{?([A-Za-z_][A-Za-z0-9_]*)\}? ]]; do
-      __pi_var=${SHELL_DOLLAR}{BASH_REMATCH[1]}
-      case $__pi_var in
-        n|u|g|user|username|group|host|hostname|service|unit|name|path|file|dir|src|tmp|stage|staging|dst|dest|target|package|version|port|HOME|SUDO_USER) ;;
-        *) __pi_unsafe=1 ;;
-      esac
-      __pi_vars=${SHELL_DOLLAR}{__pi_vars#*"${SHELL_DOLLAR}{BASH_REMATCH[0]}"}
-    done
+    if [[ $__pi_vars == *'$('* ]]; then
+      __pi_unsafe=1
+    elif ! __pi_history_source_expansion_safe "$__pi_source"; then
+      while [[ $__pi_vars =~ \$\{?([A-Za-z_][A-Za-z0-9_]*)\}? ]]; do
+        __pi_var=${SHELL_DOLLAR}{BASH_REMATCH[1]}
+        case $__pi_var in
+          n|u|g|user|username|group|host|hostname|service|unit|name|path|file|dir|src|tmp|stage|staging|dst|dest|target|package|version|port|HOME|SUDO_USER) ;;
+          *) __pi_unsafe=1 ;;
+        esac
+        __pi_vars=${SHELL_DOLLAR}{__pi_vars#*"${SHELL_DOLLAR}{BASH_REMATCH[0]}"}
+      done
+    fi
     (( __pi_unsafe == 0 )) || continue
     if [[ $__pi_source == *'>'* ]]; then
       case $__pi_source in
