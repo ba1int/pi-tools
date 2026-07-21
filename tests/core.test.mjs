@@ -5,6 +5,7 @@ import {
   classifySshFailure,
   connectionReuseEnabled,
   enforceAllowedHost,
+  enforceWorkerAuthority,
   DEFAULT_OUTPUT_BYTES,
   DEFAULT_TIMEOUT_SECONDS,
   formatResult,
@@ -32,6 +33,21 @@ test("an optional worker lease restricts SSH to explicit hosts", () => {
   assert.throws(() => enforceAllowedHost("db01", "app01,relay01"), /outside this worker's SSH lease/);
   assert.throws(() => enforceAllowedHost("app01", "app01,app01"), /unique/);
   assert.equal(enforceAllowedHost("db01", ""), "db01");
+});
+
+test("a read-only worker lease mechanically rejects common remote mutations", () => {
+  assert.equal(enforceWorkerAuthority("hostname; cat /etc/os-release", "true"), "hostname; cat /etc/os-release");
+  assert.equal(enforceWorkerAuthority("probe 2>/dev/null", "1"), "probe 2>/dev/null");
+  for (const command of [
+    "sudo install -m 0644 next.conf /etc/app.conf",
+    "sed -i 's/old/new/' /etc/app.conf",
+    "docker restart middleware",
+    "printf x > /etc/app.conf",
+    "systemctl reload icinga2",
+  ]) {
+    assert.throws(() => enforceWorkerAuthority(command, "true"), /read-only SSH lease/);
+    assert.equal(enforceWorkerAuthority(command, "false"), command);
+  }
 });
 
 test("SSH argv fixes noninteractive and forwarding behavior", () => {

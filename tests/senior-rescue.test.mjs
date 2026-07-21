@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildSeniorPrompt,
   JsonEventCollector,
+  ReactiveRescueState,
   normalizeBudget,
   normalizeSeniorRequest,
   normalizeRescueLimit,
@@ -18,6 +19,7 @@ const request = {
   current_state: "service is running; validator exits 7; canary is intact",
   failed_attempts: ["re-read active config and corrected the documented path"],
   constraints: "do not touch the legacy satellite",
+  mutation_authorized: true,
   allowed_hosts: ["lab-dc2-sat01", "lab-dc1-master01"],
 };
 
@@ -35,6 +37,7 @@ test("the senior prompt makes scope, verification, and handback explicit", () =>
   assert.match(prompt, /temporary senior for one blocked operations task/);
   assert.match(prompt, /lab-dc2-sat01, lab-dc1-master01/);
   assert.match(prompt, /Observe before mutation/);
+  assert.match(prompt, /MUTATION AUTHORIZED/);
   assert.match(prompt, /Return ONLY one JSON object/);
 });
 
@@ -102,4 +105,35 @@ test("senior time and tool budgets are bounded", () => {
   assert.throws(() => normalizeSeniorTimeout(601), /30-600/);
   assert.equal(normalizeRescueLimit(undefined), 3);
   assert.throws(() => normalizeRescueLimit("7"), /1-6/);
+});
+
+function assistantReport(text) {
+  return [{ role: "assistant", content: [{ type: "text", text }] }];
+}
+
+test("reactive rescue queues exactly once after an unexpected host-bound stop", () => {
+  const state = new ReactiveRescueState();
+  state.noteInput({ source: "interactive", text: "Wire app01 into monitoring." });
+  state.noteHost("app01");
+  state.noteFinal(assistantReport("Blocked because assignment conflicts with live state. No changes made."));
+  const followUp = state.takeFollowUp();
+  assert.match(followUp, /Call senior_rescue exactly once/);
+  assert.match(followUp, /Wire app01 into monitoring/);
+  assert.match(followUp, /already observed hosts: app01/);
+  assert.equal(state.takeFollowUp(), null);
+});
+
+test("reactive rescue preserves hard stops and requires an observed host", () => {
+  for (const report of [
+    "Blocked: this object belongs to another owning team; no changes made.",
+    "Blocked: dual-relay topology is not covered by the runbook.",
+  ]) {
+    const state = new ReactiveRescueState();
+    state.noteHost("app01");
+    state.noteFinal(assistantReport(report));
+    assert.equal(state.takeFollowUp(), null, report);
+  }
+  const noHost = new ReactiveRescueState();
+  noHost.noteFinal(assistantReport("Blocked after validation; no changes made."));
+  assert.equal(noHost.takeFollowUp(), null);
 });

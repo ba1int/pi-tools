@@ -10,6 +10,7 @@ import {
   classifySshFailure,
   connectionReuseEnabled,
   enforceAllowedHost,
+  enforceWorkerAuthority,
   formatResult,
   isTransportFailureKind,
   looksLikeRawRemoteTransport,
@@ -18,7 +19,6 @@ import {
   remoteProgram,
   sanitizeTerminalText,
   sshArgs,
-  validateCommand,
 } from "./core.js";
 
 type ExecResult = {
@@ -150,7 +150,7 @@ export default function sshDirect(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal) {
       const host = enforceAllowedHost(params.host);
-      const command = validateCommand(params.command);
+      const command = enforceWorkerAuthority(params.command);
       const timeoutSeconds = normalizeTimeout(params.timeout_seconds);
       const maxOutputBytes = normalizeOutputLimit(params.max_output_bytes);
       const resolvedControlPath = await controlPath;

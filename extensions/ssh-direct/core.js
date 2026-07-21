@@ -6,6 +6,17 @@ export const CONTROL_PERSIST_SECONDS = 60;
 
 const HOST_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,252}|[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,252})$/;
 
+const MUTATING_COMMANDS = [
+  /(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?(?:rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd|sed\s+-i|perl\s+-i)\b/i,
+  /(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?(?:systemctl\s+(?:restart|reload|stop|start|enable|disable|daemon-reload|daemon-reexec)|service\s+\S+\s+(?:restart|reload|stop|start))\b/i,
+  /(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?(?:apt(?:-get)?|aptitude|dnf|yum|zypper)\s+(?:install|remove|purge|update|upgrade|full-upgrade|dist-upgrade)\b/i,
+  /(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?(?:docker|podman)(?:\s+compose)?\s+(?:build|create|down|kill|pause|pull|push|restart|rm|rmi|run|start|stop|unpause|update|up)\b/i,
+  /(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?(?:kubectl\s+(?:apply|create|delete|drain|edit|label|annotate|patch|replace|rollout|scale|set|taint|cordon|uncordon)|helm\s+(?:install|upgrade|uninstall|rollback))\b/i,
+  /(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?(?:(?:user|group)(?:add|mod|del)|passwd|chpasswd|mount|umount|swapon|swapoff|crontab|sysctl\s+-w)\b/i,
+  /(?:^|[;&|]\s*)(?:sudo(?:\s+-\S+)*\s+)?(?:(?:iptables|ip6tables)\s+(?:-A|-I|-D|-R|-F|-X|-P|-N)|nft\s+(?:add|delete|insert|replace|flush|reset|import|-f)|ufw\s+(?:enable|disable|allow|deny|reject|limit|delete|reset|reload|route)|firewall-cmd\s+(?:--add|--remove|--reload|--complete-reload|--set|--new|--delete))/i,
+  /(?:^|[\s;|&])\d*>>?\s*(?!&?\d\b|\d+\b|\/dev\/(?:null|stdout|stderr)\b)[^\s;|&]+/i,
+];
+
 const TRANSPORT_FAILURE_KINDS = new Set([
   "timeout",
   "dns",
@@ -51,6 +62,18 @@ export function validateCommand(value) {
     throw new Error("command cannot contain a NUL byte");
   }
   return value;
+}
+
+export function looksMutatingCommand(value) {
+  return MUTATING_COMMANDS.some((pattern) => pattern.test(String(value ?? "")));
+}
+
+export function enforceWorkerAuthority(value, readOnly = process.env.PI_SSH_READ_ONLY) {
+  const command = validateCommand(value);
+  if (/^(?:1|on|true|yes)$/i.test(String(readOnly ?? "")) && looksMutatingCommand(command)) {
+    throw new Error("this worker has a read-only SSH lease; mutation is mechanically denied");
+  }
+  return command;
 }
 
 export function normalizeTimeout(value) {

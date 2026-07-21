@@ -6,6 +6,7 @@ import { Type } from "typebox";
 import {
   MAX_CAPTURE_BYTES,
   JsonEventCollector,
+  ReactiveRescueState,
   buildSeniorPrompt,
   normalizeBudget,
   normalizeSeniorRequest,
@@ -45,6 +46,7 @@ function runSenior(request, options, signal, onUpdate, cwd) {
         ...process.env,
         PI_SENIOR_CHILD: "1",
         PI_SSH_ALLOWED_HOSTS: request.allowed_hosts.join(","),
+        PI_SSH_READ_ONLY: request.mutation_authorized ? "0" : "1",
         PI_SENIOR_MAX_TOOL_CALLS: String(options.maxToolCalls),
         PI_THINKING_ROUTER: "off",
         PI_SKIP_VERSION_CHECK: "1",
@@ -87,6 +89,31 @@ export default function seniorRescue(pi: ExtensionAPI) {
   if (process.env.PI_SENIOR_CHILD === "1") return;
   const used = new Set<string>();
   const maximumRescues = normalizeRescueLimit(process.env.PI_SENIOR_MAX_RESCUES);
+  const reactive = new ReactiveRescueState();
+
+  pi.on("session_start", async () => {
+    reactive.reset();
+    used.clear();
+  });
+
+  pi.on("input", async (event) => {
+    reactive.noteInput(event);
+    return { action: "continue" as const };
+  });
+
+  pi.on("tool_call", async (event) => {
+    if (event.toolName !== "ssh_exec") return;
+    reactive.noteHost((event.input as { host?: unknown })?.host);
+  });
+
+  pi.on("agent_end", async (event) => {
+    reactive.noteFinal(event.messages);
+  });
+
+  pi.on("agent_settled", async () => {
+    const followUp = reactive.takeFollowUp();
+    if (followUp) pi.sendUserMessage(followUp, { deliverAs: "followUp" });
+  });
 
   pi.registerTool({
     name: "senior_rescue",
@@ -104,6 +131,7 @@ export default function seniorRescue(pi: ExtensionAPI) {
       current_state: Type.String({ minLength: 3, maxLength: 12000 }),
       failed_attempts: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }), { maxItems: 6 })),
       constraints: Type.Optional(Type.String({ maxLength: 4000 })),
+      mutation_authorized: Type.Boolean({ description: "True only when the original user task authorizes necessary in-scope mutation." }),
       allowed_hosts: Type.Array(Type.String({ minLength: 1, maxLength: 320 }), { minItems: 1, maxItems: 8 }),
       max_tool_calls: Type.Optional(Type.Integer({ minimum: 1, maximum: 12 })),
       timeout_seconds: Type.Optional(Type.Integer({ minimum: 30, maximum: 600 })),
@@ -135,7 +163,7 @@ export default function seniorRescue(pi: ExtensionAPI) {
             code: result.code, timedOut: result.timedOut,
             stderr: result.stderr.slice(-4000), stderrTruncated: result.stderrTruncated,
             ...transcript,
-            request: { objective: request.objective, blocker: request.blocker, allowed_hosts: request.allowed_hosts },
+            request: { objective: request.objective, blocker: request.blocker, allowed_hosts: request.allowed_hosts, mutation_authorized: request.mutation_authorized },
             options, parseError: error.message,
           },
           isError: true,
@@ -147,7 +175,7 @@ export default function seniorRescue(pi: ExtensionAPI) {
           code: result.code, timedOut: result.timedOut,
           stderr: result.stderr.slice(-4000), stderrTruncated: result.stderrTruncated,
           ...transcript,
-          request: { objective: request.objective, blocker: request.blocker, allowed_hosts: request.allowed_hosts },
+          request: { objective: request.objective, blocker: request.blocker, allowed_hosts: request.allowed_hosts, mutation_authorized: request.mutation_authorized },
           options, handback,
         },
         isError: result.code !== 0 || result.timedOut || result.stderrTruncated || transcript.oversizedLine,

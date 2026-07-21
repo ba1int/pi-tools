@@ -1,9 +1,59 @@
 import { createHash } from "node:crypto";
+import { finalResultRequiresEscalation } from "../thinking-router/core.js";
 
 export const DEFAULT_TIMEOUT_SECONDS = 240;
 export const MAX_TIMEOUT_SECONDS = 600;
 export const DEFAULT_MAX_TOOL_CALLS = 6;
 export const MAX_CAPTURE_BYTES = 2 * 1024 * 1024;
+
+export class ReactiveRescueState {
+  constructor(maxHosts = 8) {
+    this.maxHosts = maxHosts;
+    this.reset();
+  }
+
+  reset() {
+    this.objective = "";
+    this.finalReport = "";
+    this.automaticRescueUsed = false;
+    this.observedHosts = new Set();
+  }
+
+  noteInput(event) {
+    if (event?.source !== "extension" && !event?.streamingBehavior && !this.objective) {
+      this.objective = String(event?.text ?? "").trim();
+    }
+  }
+
+  noteHost(host) {
+    if (typeof host === "string" && host && this.observedHosts.size < this.maxHosts) {
+      this.observedHosts.add(host);
+    }
+  }
+
+  noteFinal(messages) {
+    for (let index = (messages?.length ?? 0) - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.role !== "assistant") continue;
+      this.finalReport = (message.content ?? []).filter((part) => part.type === "text")
+        .map((part) => part.text ?? "").join("\n").trim();
+      return;
+    }
+    this.finalReport = "";
+  }
+
+  takeFollowUp() {
+    if (this.automaticRescueUsed || this.observedHosts.size === 0
+        || !finalResultRequiresEscalation(this.finalReport)) {
+      this.finalReport = "";
+      return null;
+    }
+    this.automaticRescueUsed = true;
+    const blockedConclusion = this.finalReport;
+    this.finalReport = "";
+    return `Reactive blocker rescue. Call senior_rescue exactly once, then independently verify its handback and resume the original task if safe.\n\nOriginal objective:\n${this.objective || "Continue the current user-authorized task."}\n\nYour blocked conclusion:\n${blockedConclusion}\n\nPackage only verified current state and failed attempts. Lease only these already observed hosts: ${[...this.observedHosts].join(", ")}. Set mutation_authorized true only if the original user request authorized the needed in-scope changes; otherwise set it false. Never override missing authority, ownership conflicts, unsupported topology, credentials, or trust failures.`;
+  }
+}
 
 export function normalizeSeniorRequest(value) {
   if (!value || typeof value !== "object") throw new Error("senior rescue request is required");
@@ -28,6 +78,10 @@ export function normalizeSeniorRequest(value) {
     ? value.failed_attempts.filter((item) => typeof item === "string").slice(0, 6).map((item) => item.slice(0, 2_000))
     : [];
   request.constraints = typeof value.constraints === "string" ? value.constraints.slice(0, 4_000) : "";
+  if (typeof value.mutation_authorized !== "boolean") {
+    throw new Error("mutation_authorized must explicitly preserve the original user's authority");
+  }
+  request.mutation_authorized = value.mutation_authorized;
   return request;
 }
 
@@ -38,7 +92,10 @@ export function rescueFingerprint(request) {
 }
 
 export function buildSeniorPrompt(request) {
-  return `You are the temporary senior for one blocked operations task. The Luna operator remains owner.\n\nOBJECTIVE\n${request.objective}\n\nOBSERVED BLOCKER\n${request.blocker}\n\nCURRENT VERIFIED STATE\n${request.current_state}\n\nFAILED ATTEMPTS\n${request.failed_attempts.length ? request.failed_attempts.map((item) => `- ${item}`).join("\n") : "- none supplied"}\n\nCONSTRAINTS\n${request.constraints || "- preserve unrelated state; use least change necessary"}\n\nLEASE\n- SSH hosts: ${request.allowed_hosts.join(", ")}\n- You may diagnose and make the smallest necessary fix only on those hosts.\n- Do not expand scope, invent authority, delegate, or repeat failed attempts without new evidence.\n- Observe before mutation. After any mutation, verify the affected checkpoint.\n- If ownership, authority, credentials, trust, or topology is genuinely missing, stop safely.\n\nReturn ONLY one JSON object with this exact shape:\n{\n  "status": "resolved|guidance|blocked",\n  "root_cause": "...",\n  "changes": ["host: exact change"],\n  "verification": ["host: exact observed result"],\n  "handback": "what Luna should do next",\n  "remaining_risks": ["..."],\n  "hosts_touched": ["..."]\n}`;
+  const authority = request.mutation_authorized
+    ? "MUTATION AUTHORIZED: the original task authorizes necessary in-scope changes. Use the smallest change that resolves this blocker."
+    : "READ ONLY: the original task does not authorize mutation. Diagnose and return guidance; do not change remote state.";
+  return `You are the temporary senior for one blocked operations task. The Luna operator remains owner.\n\nOBJECTIVE\n${request.objective}\n\nOBSERVED BLOCKER\n${request.blocker}\n\nCURRENT VERIFIED STATE\n${request.current_state}\n\nFAILED ATTEMPTS\n${request.failed_attempts.length ? request.failed_attempts.map((item) => `- ${item}`).join("\n") : "- none supplied"}\n\nCONSTRAINTS\n${request.constraints || "- preserve unrelated state; use least change necessary"}\n\nAUTHORITY\n${authority}\n\nLEASE\n- SSH hosts: ${request.allowed_hosts.join(", ")}\n- Do not expand scope, invent authority, delegate, or repeat failed attempts without new evidence.\n- Observe before mutation. After any mutation, verify the affected checkpoint.\n- If ownership, authority, credentials, trust, or topology is genuinely missing, stop safely.\n\nReturn ONLY one JSON object with this exact shape:\n{\n  "status": "resolved|guidance|blocked",\n  "root_cause": "...",\n  "changes": ["host: exact change"],\n  "verification": ["host: exact observed result"],\n  "handback": "what Luna should do next",\n  "remaining_risks": ["..."],\n  "hosts_touched": ["..."]\n}`;
 }
 
 export function parseJsonEvents(text) {
