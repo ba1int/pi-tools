@@ -12,6 +12,7 @@ const SHELL_DOLLAR = "$";
 const REMOTE_HISTORY_PRELUDE = String.raw`__pi_history_file=${SHELL_DOLLAR}{HISTFILE:-"$HOME/.bash_history"}
 __pi_history_guard=0
 __pi_history_edit_cache='|'
+__pi_history_line_cache=''
 __pi_history_python_edit() {
   local __pi_edit_cmd="$1" __pi_rest __pi_match __pi_path __pi_paths='' __pi_seen='|'
   local __pi_path_re="['\"](/(etc|home|opt|root|srv|usr|var)/[^'\"[:space:]]+)['\"]"
@@ -90,14 +91,14 @@ __pi_history_file_edit() {
 }
 
 __pi_history_record() {
-  local __pi_cmd="$1" __pi_head __pi_line __pi_record=0
+  local __pi_cmd="$1" __pi_head __pi_line __pi_line_key __pi_record=0 __pi_kind=''
   (( __pi_history_guard == 0 )) || return 0
 
   # Most DEBUG events are inspections. Avoid the full classifier unless the
   # executable or a redirection could plausibly change state or validate it.
   __pi_head=${SHELL_DOLLAR}{__pi_cmd%%[[:space:]]*}
   case $__pi_head in
-    sudo|python|python3|python3.*|rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd|sed|perl|systemctl|service|apt|apt-get|aptitude|dnf|yum|zypper|dpkg|rpm|docker|podman|kubectl|helm|useradd|usermod|userdel|groupadd|groupmod|groupdel|mount|umount|swapon|swapoff|crontab|sysctl|iptables|ip6tables|nft|ufw|firewall-cmd|git|ansible-playbook|icinga2|nginx|apachectl|haproxy|sshd|visudo|validate|validate-*|check-config|configtest|*/validate|*/validate-*|*/check-config|*/configtest) ;;
+    sudo|python|python3|python3.*|cd|pwd|hostname|uname|uptime|date|whoami|id|groups|ls|stat|find|file|readlink|realpath|cat|head|tail|grep|egrep|fgrep|rg|awk|sed|perl|cut|sort|uniq|wc|diff|cmp|sha256sum|md5sum|getent|pgrep|pidof|ps|pstree|free|vmstat|iostat|sar|df|du|lsblk|blkid|ip|ss|netstat|lsof|ping|traceroute|tracepath|dig|host|nslookup|curl|wget|journalctl|dmesg|timedatectl|loginctl|lsmod|modinfo|sysctl|rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd|systemctl|service|apt|apt-get|aptitude|apt-cache|dnf|yum|zypper|dpkg|rpm|docker|podman|kubectl|helm|useradd|usermod|userdel|groupadd|groupmod|groupdel|mount|umount|swapon|swapoff|crontab|iptables|ip6tables|nft|ufw|firewall-cmd|git|ansible|ansible-playbook|icinga2|nagios|nagios3|nagios4|nginx|apachectl|haproxy|sshd|visudo|validate|validate-*|check-config|configtest|*/validate|*/validate-*|*/check-config|*/configtest) ;;
     *) [[ $__pi_cmd == *'>'* ]] || return 0 ;;
   esac
 
@@ -106,28 +107,46 @@ __pi_history_record() {
   if [[ $__pi_cmd =~ $__pi_secret_re ]]; then
     return 0
   fi
+  case $__pi_cmd in
+    'grep -q .'|'grep -q . '*|"grep -q '.'"|"grep -q '.' "*) return 0 ;;
+  esac
 
   local __pi_mutation_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(rm|rmdir|mv|cp|install|mkdir|touch|ln|chmod|chown|chgrp|truncate|tee|dd)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sed|perl)[[:space:]]+-[^[:space:]]*i|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?systemctl[[:space:]]+(daemon-reload|daemon-reexec|restart|reload|stop|start|enable|disable|mask|unmask)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?service[[:space:]]+[^[:space:]]+[[:space:]]+(restart|reload|stop|start)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(apt|apt-get|aptitude|dnf|yum|zypper|dpkg|rpm)[[:space:]]+(install|remove|purge|upgrade|full-upgrade|dist-upgrade|update|erase|-i|-U|-e|--install|--remove|--purge|--upgrade|--erase)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(docker|podman)([[:space:]]+compose)?[[:space:]]+(build|create|down|kill|pause|pull|push|restart|rm|rmi|run|start|stop|unpause|update|up)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(kubectl[[:space:]]+(apply|create|delete|drain|edit|label|annotate|patch|replace|rollout|scale|set|taint|cordon|uncordon)|helm[[:space:]]+(install|upgrade|uninstall|rollback))([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(useradd|usermod|userdel|groupadd|groupmod|groupdel|mount|umount|swapon|swapoff|crontab)([[:space:]]|$)|(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(sysctl[[:space:]]+-w|iptables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|ip6tables[[:space:]]+(-A|-I|-D|-R|-F|-X|-P|-N)|nft[[:space:]]+(add|delete|insert|replace|flush|reset|import|-f)|ufw[[:space:]]+(enable|disable|allow|deny|reject|limit|delete|reset|reload|route)|firewall-cmd[[:space:]]+--(add|remove|reload|complete-reload|set|new|delete))|(^|[;&|][[:space:]]*)(git[[:space:]]+(add|commit|checkout|switch|merge|rebase|reset|pull|push|restore|clean|cherry-pick|tag)|ansible-playbook)([[:space:]]|$)'
   local __pi_validator_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(systemctl[[:space:]]+(is-active|is-enabled)|icinga2[[:space:]]+daemon[[:space:]]+-C|nginx[[:space:]]+-t|apachectl[[:space:]]+configtest|haproxy[[:space:]]+-c|sshd[[:space:]]+-t|visudo[[:space:]]+-c|([^[:space:]]*/)?(validate|validate-[^[:space:]]*|check-config|configtest))([[:space:]]|$)'
+  local __pi_observation_re='(^|[;&|][[:space:]]*)(sudo([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(cd|pwd|hostname|uname|uptime|date|whoami|id|groups|ls|stat|find|file|readlink|realpath|cat|head|tail|grep|egrep|fgrep|rg|awk|sed|perl|cut|sort|uniq|wc|diff|cmp|sha256sum|md5sum|getent|pgrep|pidof|ps|pstree|free|vmstat|iostat|sar|df|du|lsblk|blkid|ip|ss|netstat|lsof|ping|traceroute|tracepath|dig|host|nslookup|curl|wget|journalctl|dmesg|timedatectl|loginctl|lsmod|modinfo|sysctl|systemctl|service|apt|apt-get|aptitude|apt-cache|dnf|yum|zypper|dpkg|rpm|docker|podman|kubectl|helm|git|ansible|icinga2|nagios|nagios3|nagios4)([[:space:]]|$)'
   local __pi_redirect_re='(^|[[:space:]])[0-9]*>>?[[:space:]]*([^&[:space:]]+)'
 
   __pi_history_rendered=''
   if __pi_history_python_edit "$__pi_cmd"; then
     __pi_record=1
-  elif [[ $__pi_cmd =~ $__pi_mutation_re || $__pi_cmd =~ $__pi_validator_re ]]; then
+    __pi_kind='mutation'
+  elif [[ $__pi_cmd =~ $__pi_mutation_re ]]; then
     __pi_record=1
+    __pi_kind='mutation'
+  elif [[ $__pi_cmd =~ $__pi_validator_re ]]; then
+    __pi_record=1
+    __pi_kind='validator'
+  elif [[ $__pi_cmd =~ $__pi_observation_re ]]; then
+    __pi_record=1
+    __pi_kind='observation'
+    if [[ $__pi_cmd =~ $__pi_redirect_re ]]; then
+      case ${SHELL_DOLLAR}{BASH_REMATCH[2]} in
+        /dev/null|/dev/stdout|/dev/stderr) ;;
+        *) __pi_kind='mutation' ;;
+      esac
+    fi
   elif [[ $__pi_cmd =~ $__pi_redirect_re ]]; then
     case ${SHELL_DOLLAR}{BASH_REMATCH[2]} in
       /dev/null|/dev/stdout|/dev/stderr) ;;
-      *) __pi_record=1 ;;
+      *) __pi_record=1; __pi_kind='mutation' ;;
     esac
   fi
 
   if (( __pi_record == 1 )); then
     if [[ -n $__pi_history_rendered ]]; then
       :
-    elif ! __pi_history_file_edit "$__pi_cmd"; then
-      if [[ $__pi_cmd == *'/tmp/'* || $__pi_cmd == *'/var/tmp/'* || $__pi_cmd == *'$B'* || $__pi_cmd == *'${SHELL_DOLLAR}{B}'* ]]; then
+    elif [[ $__pi_kind != mutation ]] || ! __pi_history_file_edit "$__pi_cmd"; then
+      if [[ $__pi_kind == mutation && ( $__pi_cmd == *'/tmp/'* || $__pi_cmd == *'/var/tmp/'* || $__pi_cmd == *'$B'* || $__pi_cmd == *'${SHELL_DOLLAR}{B}'* ) ]]; then
         return 0
       fi
       __pi_line=${SHELL_DOLLAR}{__pi_cmd//$'\r'/}
@@ -147,6 +166,9 @@ __pi_history_record() {
       return 0
     fi
     [[ -n $__pi_line && ${SHELL_DOLLAR}{#__pi_line} -le 8192 ]] || return 0
+    __pi_line_key=$'\n'"$__pi_line"$'\n'
+    [[ $'\n'"$__pi_history_line_cache" == *"$__pi_line_key"* ]] && return 0
+    __pi_history_line_cache="$__pi_history_line_cache$__pi_line"$'\n'
     __pi_history_guard=1
     printf '%s\n' "$__pi_line" >> "$__pi_history_file" 2>/dev/null || true
     __pi_history_guard=0

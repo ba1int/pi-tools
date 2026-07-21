@@ -19,8 +19,9 @@ The tool:
 - defaults to a 30-second timeout;
 - caps rendered output at 16 KiB by default and 32 KiB maximum;
 - retains both the beginning and end when output is truncated;
-- appends a concise mutation and validation view to the remote SSH user's Bash
-  history while omitting inspections and likely secret-bearing commands;
+- appends a concise operational view to the remote SSH user's Bash history,
+  including useful diagnostics, changes, and validation while omitting shell
+  plumbing and likely secret-bearing commands;
 - tells Pi to use parallel tool calls for independent hosts; and
 - blocks model-generated `ssh`, `scp`, `sftp`, and `rsync` transports through
   local Bash so Pi retries through `ssh_exec` or `ssh_copy` automatically.
@@ -41,14 +42,17 @@ validation, timeouts, and approval behavior remain identical. Set
 `PI_SSH_MULTIPLEXING=off` to return to one new connection per call.
 
 History capture happens immediately before each selected command, so failed or
-partially applied operations remain visible. File-writing mechanics such as
-temporary files, backups, heredocs, `tee`, and atomic `install` are projected as
-one `sudoedit PATH` or `vi PATH` entry per durable file; Pi still executes the
-original program unchanged. Other operations and validators remain literal.
-Entries have no Pi-specific comments. Set `PI_SSH_REMOTE_HISTORY=off` to disable
-it. This is shared operator context, not an audit log: the remote account's Bash
-history retention and `histappend` policy still determine how long entries
-survive.
+partially applied operations remain visible. It retains common diagnostic work
+such as service and journal inspection, process/resource/network checks, config
+reads and searches, package queries, container inspection, monitoring commands,
+and Git/Ansible inspection. File-writing mechanics such as temporary files,
+backups, heredocs, `tee`, and atomic `install` are projected as one
+`sudoedit PATH` or `vi PATH` entry per durable file; Pi still executes the
+original program unchanged. Shell plumbing, temporary mutations, and likely
+credential-bearing commands remain excluded. Entries have no Pi-specific
+comments. Set `PI_SSH_REMOTE_HISTORY=off` to disable it. This is shared operator
+context, not an audit log: the remote account's Bash history retention and
+`histappend` policy still determine how long entries survive.
 
 Failed calls identify DNS, authentication, host-key, refusal, timeout,
 connection-loss, and ordinary remote-command exits in compact result metadata.

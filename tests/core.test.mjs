@@ -160,7 +160,7 @@ test("remote history recording is opt-out", () => {
   assert.equal(remoteHistoryEnabled("FALSE"), false);
 });
 
-test("remote history keeps operational commands and drops inspection and secrets", async () => {
+test("remote history keeps operational changes and diagnostics but drops plumbing and secrets", async () => {
   const home = await mkdtemp(join(tmpdir(), "pi-ssh-history-"));
   const history = join(home, ".bash_history");
   const validator = join(home, "validate-demo");
@@ -170,7 +170,28 @@ test("remote history keeps operational commands and drops inspection and secrets
     const script = remoteProgram(`
 sudo() { "$@"; }
 python3() { cat >/dev/null; }
+systemctl() { return 0; }
+journalctl() { return 0; }
+ss() { return 0; }
+docker() { return 0; }
+rpm() { return 0; }
+pgrep() { return 0; }
+ps() { return 0; }
+curl() { return 0; }
 hostname >/dev/null
+id >/dev/null
+uptime >/dev/null
+systemctl status icinga2 >/dev/null
+systemctl status icinga2 >/dev/null
+journalctl -u icinga2 -n 20 >/dev/null
+grep -q . "$HOME/config" || true
+pgrep -af icinga >/dev/null || true
+ps -ef >/dev/null
+df -h / >/dev/null
+ss -lnt >/dev/null
+docker ps >/dev/null
+rpm -q icinga2 >/dev/null
+curl -H 'Authorization: Bearer do-not-store' https://example.invalid >/dev/null || true
 printf '%s\\n' inspected
 touch "$HOME/changed"
 ${validator} app01
@@ -178,6 +199,8 @@ mkdir "$HOME/existing"
 mkdir "$HOME/existing" || true
 printf '%s\\n' safe > "$HOME/config"
 printf '%s\\n' updated > "$HOME/config"
+cat "$HOME/config" >/dev/null
+grep -n updated "$HOME/config" >/dev/null
 install "$HOME/config" "$HOME/installed"
 sudo install "$HOME/config" "$HOME/privileged"
 sudo python3 - <<'PY'
@@ -200,11 +223,23 @@ printf '%s\\n' password=do-not-store > "$HOME/credentials"
     assert.equal(result.status, 0, result.stderr);
     const lines = (await readFile(history, "utf8")).trim().split("\n");
     assert.deepEqual(lines, [
+      "hostname > /dev/null",
+      "id > /dev/null",
+      "uptime > /dev/null",
+      "systemctl status icinga2 > /dev/null",
+      "journalctl -u icinga2 -n 20 > /dev/null",
+      "pgrep -af icinga > /dev/null",
+      "ps -ef > /dev/null",
+      "df -h / > /dev/null",
+      "ss -lnt > /dev/null",
+      "docker ps > /dev/null",
+      "rpm -q icinga2 > /dev/null",
       'touch "$HOME/changed"',
       `${validator} app01`,
       'mkdir "$HOME/existing"',
-      'mkdir "$HOME/existing"',
       'vi "$HOME/config"',
+      'cat "$HOME/config" > /dev/null',
+      'grep -n updated "$HOME/config" > /dev/null',
       'vi "$HOME/installed"',
       'sudoedit "$HOME/privileged"',
       'sudoedit /etc/demo/first.conf /etc/demo/second.conf',
