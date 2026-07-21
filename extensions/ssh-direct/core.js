@@ -291,6 +291,7 @@ __pi_history_start() {
   __pi_history_trace_pid=$!
   BASH_XTRACEFD=19
   __pi_src=''
+  set -o functrace
   trap '__pi_src=$BASH_COMMAND' DEBUG
   PS4='+PI_SRC=${SHELL_DOLLAR}{__pi_src}|PI_EXP= '
   trap '__pi_history_status=$?; __pi_history_finish "$__pi_history_status"; exit "$__pi_history_status"' EXIT
