@@ -108,9 +108,8 @@ export default function seniorRescue(pi: ExtensionAPI) {
 
   pi.on("agent_end", async (event) => {
     reactive.noteFinal(event.messages);
-  });
-
-  pi.on("agent_settled", async () => {
+    // Pi checks for messages queued by agent_end before declaring the run
+    // settled. agent_settled is intentionally too late to continue --print.
     const followUp = reactive.takeFollowUp();
     if (followUp) pi.sendUserMessage(followUp, { deliverAs: "followUp" });
   });
