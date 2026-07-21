@@ -296,6 +296,7 @@ export default function sshDirect(pi: ExtensionAPI) {
     promptGuidelines: [
       "Use ssh_copy when an authorized task requires moving one file between the local workstation and a named remote host.",
       "Use absolute local and remote paths. Transfer to a user-writable staging path, then use ssh_exec for privileged installation and validation.",
+      "Run dependent transfers sequentially: wait for an upload to succeed before downloading, installing, or validating that remote path. Parallelize only transfers that do not depend on each other.",
       "Do not use ssh_copy to inspect file contents or recursively copy directories. Prefer generated configuration through ssh_exec when no source artifact already exists.",
     ],
     parameters: Type.Object({
